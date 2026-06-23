@@ -91,8 +91,8 @@ tianbot_core.srv.DebugCmd_Response(result='accel z-axis offset set to 1.250000\r
 
 ### Core Modules
 1. **Chassis Control Module**
-   - Supports multiple chassis types (differential, omnidirectional, Ackermann, Rover).
-   - Related files: `src/chassis.cpp`, `src/differential.cpp`, `src/omni.cpp`, `src/ackermann.cpp`, `src/rover.cpp`.
+   - Supports multiple chassis types (differential, omnidirectional, Ackermann, Rover, AMP, NDI).
+   - Related files: `src/chassis.cpp`, `src/differential.cpp`, `src/omni.cpp`, `src/ackermann.cpp`, `src/rover.cpp`, `src/amp.cpp`, `src/ndi.cpp`.
 
 2. **Communication Module**
    - Provides serial and UDP communication interfaces.
@@ -110,6 +110,14 @@ tianbot_core.srv.DebugCmd_Response(result='accel z-axis offset set to 1.250000\r
 - **ROS 2 Core Dependencies**: `rclcpp`, `std_msgs`, `geometry_msgs`, `nav_msgs`.
 - **Communication Dependencies**: `tf2`, `tf2_ros`, `tf2_geometry_msgs`.
 - **Chassis Control Dependencies**: `ackermann_msgs`.
+
+## AMP / NDI Support
+
+The `ros2` branch supports `type:=amp` and `type:=ndi` in addition to the generic chassis types.
+
+- `amp` restores `stack_light_ctrl`, `lift_actuator_ctrl`, `spindle_ctrl` and the related feedback topics.
+- `ndi` restores `stack_light_ctrl`, `lift_actuator_ctrl`, `line_opto_ctrl` and the related feedback topics.
+- Both keep the existing serial/UDP communication and reconnect behavior used by the ROS 2 node.
 
 ### Project Structure
 ```

@@ -13,6 +13,8 @@
 #include "sensor_msgs/msg/imu.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/float32.hpp"
+#include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/u_int8_multi_array.hpp"
 #include "core.h"
 
 #ifdef BUILD_BEFORE_HUMBLE
@@ -32,6 +34,12 @@ using namespace std;
 class TianbotChasis : public TianbotCore {
 public:
     TianbotChasis(const std::shared_ptr<rclcpp::Node> & node);
+
+protected:
+    rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr stack_light_pub_;
+    rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr lift_actuator_state_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr lift_actuator_position_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr spindle_vel_pub_;
 
 private:
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;

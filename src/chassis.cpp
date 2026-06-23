@@ -113,6 +113,61 @@ void TianbotChasis::tianbotDataProc(unsigned char *buf, int len)
         }
         break;
 
+    case PACK_TYPE_SIGNAL_STATUS:
+        if (sizeof(struct signal_status) == p->len - 2)
+        {
+            std_msgs::msg::UInt8MultiArray signal_msg;
+            auto signal = reinterpret_cast<struct signal_status *>(p->data);
+            signal_msg.data.push_back(signal->red);
+            signal_msg.data.push_back(signal->yellow);
+            signal_msg.data.push_back(signal->green);
+            signal_msg.data.push_back(signal->buzzer);
+            if (stack_light_pub_)
+            {
+                stack_light_pub_->publish(signal_msg);
+            }
+        }
+        break;
+
+    case PACK_TYPE_ACTUATOR_STATUS:
+        if (sizeof(struct actuator_status) == p->len - 2)
+        {
+            std_msgs::msg::UInt8 actuator_msg;
+            auto actuator = reinterpret_cast<struct actuator_status *>(p->data);
+            actuator_msg.data = actuator->state;
+            if (lift_actuator_state_pub_)
+            {
+                lift_actuator_state_pub_->publish(actuator_msg);
+            }
+        }
+        break;
+
+    case PACK_TYPE_HAITAI_VELOCITY:
+        if (sizeof(struct haitai_vel) == p->len - 2)
+        {
+            std_msgs::msg::Float32 haitai_vel_msg;
+            auto haitai_vel = reinterpret_cast<struct haitai_vel *>(p->data);
+            haitai_vel_msg.data = haitai_vel->velocity;
+            if (spindle_vel_pub_)
+            {
+                spindle_vel_pub_->publish(haitai_vel_msg);
+            }
+        }
+        break;
+
+    case PACK_TYPE_EMM_V5_VELOCITY:
+        if (sizeof(struct EmmV5_vel) == p->len - 2)
+        {
+            std_msgs::msg::Float32 emm_v5_msg;
+            auto emm_v5 = reinterpret_cast<struct EmmV5_vel *>(p->data);
+            emm_v5_msg.data = emm_v5->position;
+            if (lift_actuator_position_pub_)
+            {
+                lift_actuator_position_pub_->publish(emm_v5_msg);
+            }
+        }
+        break;
+
     case PACK_TYPE_HEART_BEAT_RESPONSE:
         break;
 

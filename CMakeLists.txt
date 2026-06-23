@@ -55,7 +55,14 @@ set(srv_files
     "srv/DebugCmd.srv"
 )
 
+set(msg_files
+    "msg/SignalLight.msg"
+    "msg/HaitaiCtrl.msg"
+    "msg/EmmV5Ctrl.msg"
+)
+
 rosidl_generate_interfaces(debug_cmd
+    ${msg_files}
     ${srv_files}
     LIBRARY_NAME
     tianbot_core
@@ -71,6 +78,7 @@ add_executable(tianbot_core
     src/chassis.cpp
     src/omni.cpp src/ackermann.cpp
     src/differential.cpp src/rover.cpp
+    src/amp.cpp src/ndi.cpp
     src/protocol.cpp
 )
 

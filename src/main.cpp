@@ -2,7 +2,9 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "ackermann.h"
+#include "amp.h"
 #include "differential.h"
+#include "ndi.h"
 #include "omni.h"
 #include "rover.h"
 #include "chassis.h"
@@ -36,6 +38,14 @@ int main(int argc, char *argv[])
     if (type == "omni")
     {
         core = new TianbotOmni(node);
+    }
+    else if (type == "amp")
+    {
+        core = new TianbotAmp(node);
+    }
+    else if (type == "ndi")
+    {
+        core = new TianbotNdi(node);
     }
     else if (type == "ackermann")
     {

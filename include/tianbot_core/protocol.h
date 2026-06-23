@@ -13,6 +13,11 @@ enum
     PACK_TYPE_HEART_BEAT = 0x0000,
     PACK_TYPE_CMD_VEL,
     PACK_TYPE_ACKMAN_VEL,
+    PACK_TYPE_SIGNAL_CTRL,
+    PACK_TYPE_ACTUATOR_CTRL,
+    PACK_TYPE_HAITAI_CTRL,
+    PACK_TYPE_LINE_OPTO_CTRL,
+    PACK_TYPE_EMM_V5_CTRL,
     PACK_TYPE_SET_ROVER_MOTION_MODE,
     PACK_TYPE_DEBUG = 0x4000,
     PACK_TYPE_ODOM_RESPONSE = 0x8000,
@@ -21,7 +26,11 @@ enum
     PACK_TYPE_IMU_REPONSE,
     PACK_TYPE_ODOM_V2_RESPONSE,
     PACK_TYPE_DEBUG_RESPONSE = 0xC000,
-    PACK_TYPE_Voltage_RESPONSE
+    PACK_TYPE_Voltage_RESPONSE,
+    PACK_TYPE_SIGNAL_STATUS,
+    PACK_TYPE_ACTUATOR_STATUS,
+    PACK_TYPE_HAITAI_VELOCITY,
+    PACK_TYPE_EMM_V5_VELOCITY,
 
 };
 
@@ -99,6 +108,50 @@ struct voltage
 struct motion_mode
 {
     uint32_t mode;
+};
+
+struct signal_status
+{
+    uint8_t red;
+    uint8_t yellow;
+    uint8_t green;
+    uint8_t buzzer;
+};
+
+struct actuator_status
+{
+    uint8_t state;
+};
+
+struct line_opto_cmd
+{
+    uint32_t pulse_ms;
+};
+
+struct HaitaiCtrl_t
+{
+    float position;
+    float velocity;
+    float torque;
+    float kp;
+    float kd;
+};
+
+struct haitai_vel
+{
+    float velocity;
+};
+
+struct EmmV5Ctrl_t
+{
+    float distance_mm;
+    uint16_t vel;
+    uint8_t acc;
+};
+
+struct EmmV5_vel
+{
+    float position;
 };
 
 struct protocol_pack
