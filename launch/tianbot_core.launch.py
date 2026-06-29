@@ -7,10 +7,10 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0'),
+        DeclareLaunchArgument('serial_port', default_value='/dev/ttyACM0'),
         DeclareLaunchArgument('serial_baudrate', default_value='460800'),
-        DeclareLaunchArgument('type', default_value='omni'),
-        DeclareLaunchArgument('type_verify', default_value='true'),
+        DeclareLaunchArgument('type', default_value='dyn'),
+        DeclareLaunchArgument('type_verify', default_value='false'),
         DeclareLaunchArgument('publish_tf', default_value='true'),
 
         Node(

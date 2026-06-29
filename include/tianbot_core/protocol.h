@@ -19,12 +19,16 @@ enum
     PACK_TYPE_LINE_OPTO_CTRL,
     PACK_TYPE_EMM_V5_CTRL,
     PACK_TYPE_SET_ROVER_MOTION_MODE,
+    PACK_TYPE_DM_MIT_CMD,
+    PACK_TYPE_DM_SPEED_CMD,
     PACK_TYPE_DEBUG = 0x4000,
     PACK_TYPE_ODOM_RESPONSE = 0x8000,
     PACK_TYPE_UWB_RESPONSE,
     PACK_TYPE_HEART_BEAT_RESPONSE,
     PACK_TYPE_IMU_REPONSE,
     PACK_TYPE_ODOM_V2_RESPONSE,
+    PACK_TYPE_DM_MOTOR_FEEDBACK = 0x800A,
+    PACK_TYPE_ROVER_MOTION_MODE_STATUS,
     PACK_TYPE_DEBUG_RESPONSE = 0xC000,
     PACK_TYPE_Voltage_RESPONSE,
     PACK_TYPE_SIGNAL_STATUS,
@@ -152,6 +156,92 @@ struct EmmV5Ctrl_t
 struct EmmV5_vel
 {
     float position;
+};
+
+struct dm_speed_cmd
+{
+    float speed_rad_s[4];
+};
+
+struct dm_mit_cmd
+{
+    float p_des[4];
+    float v_des[4];
+    float kp[4];
+    float kd[4];
+    float t_ff[4];
+};
+
+struct dm_motor_feedback
+{
+    uint8_t id;
+    uint8_t state;
+    uint8_t control_mode;
+    uint8_t reserved0;
+    uint16_t raw_position;
+    uint16_t raw_velocity;
+    uint16_t raw_torque;
+    uint16_t reserved1;
+    float output_position_rad;
+    float output_speed_rad_s;
+    float output_torque_nm;
+    float mos_temp_c;
+    float coil_temp_c;
+    float cmd_speed_rad_s;
+    float cmd_tff_nm;
+    float cmd_p_des_rad;
+    float cmd_v_des_rad_s;
+    float cmd_kp;
+    float cmd_kd;
+    uint32_t last_feedback_age_ms;
+};
+
+struct dm_motor_feedback_array
+{
+    uint32_t stamp_ms;
+    uint8_t control_mode;
+    uint8_t reserved[3];
+    struct dm_motor_feedback motors[4];
+};
+
+struct __attribute__((packed)) dm_motor_feedback_compact
+{
+    uint8_t id;
+    uint8_t state;
+    uint8_t control_mode;
+    float output_speed_rad_s;
+    float output_torque_nm;
+    float mos_temp_c;
+    float coil_temp_c;
+    uint32_t last_feedback_age_ms;
+};
+
+struct __attribute__((packed)) dm_motor_feedback_array_compact
+{
+    uint8_t control_mode;
+    struct dm_motor_feedback_compact motors[4];
+};
+
+struct rover_motion_mode_status
+{
+    uint32_t stamp_ms;
+    uint32_t chassis_mode;
+    uint32_t pc_control_mode;
+    uint32_t dm_mode;
+    uint8_t ready;
+    uint8_t ctrl_source;
+    uint8_t reserved[2];
+    uint8_t motor_ctrl_mode[4];
+    uint8_t motor_state[4];
+};
+
+struct __attribute__((packed)) rover_motion_mode_status_compact
+{
+    uint32_t chassis_mode;
+    uint32_t dm_mode;
+    uint8_t ready;
+    uint8_t motor_ctrl_mode[4];
+    uint8_t motor_state[4];
 };
 
 struct protocol_pack

@@ -53,17 +53,25 @@ set(dependencies
 ### service files
 set(srv_files
     "srv/DebugCmd.srv"
+    "srv/SetControlMode.srv"
 )
 
 set(msg_files
     "msg/SignalLight.msg"
     "msg/HaitaiCtrl.msg"
     "msg/EmmV5Ctrl.msg"
+    "msg/DmWheelSpeedCommand.msg"
+    "msg/DmMitCommand.msg"
+    "msg/DmMotorFeedback.msg"
+    "msg/DmMotorFeedbackArray.msg"
+    "msg/RoverMotionModeStatus.msg"
 )
 
 rosidl_generate_interfaces(debug_cmd
     ${msg_files}
     ${srv_files}
+    DEPENDENCIES
+    std_msgs
     LIBRARY_NAME
     tianbot_core
 )
@@ -79,6 +87,7 @@ add_executable(tianbot_core
     src/omni.cpp src/ackermann.cpp
     src/differential.cpp src/rover.cpp
     src/amp.cpp src/ndi.cpp
+    src/dyn.cpp
     src/protocol.cpp
 )
 

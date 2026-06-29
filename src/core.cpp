@@ -3,6 +3,76 @@
 #include <stdint.h>
 #include <vector>
 
+namespace
+{
+uint32_t debugTimeoutForCommand(const std::string &cmd)
+{
+    if (cmd == "reset")
+    {
+        return 0;
+    }
+    if (cmd == "param save" || cmd == "param reset")
+    {
+        return 2000;
+    }
+    if (cmd.find("set_") != cmd.npos)
+    {
+        return 3000;
+    }
+    return 200;
+}
+}
+
+bool TianbotCore::sendDebugCommandAndWait(const std::string &cmd, uint32_t timeout_ms, std::string *result)
+{
+    std::lock_guard<std::mutex> debug_command_lock(debug_command_mutex_);
+
+    {
+        std::lock_guard<std::mutex> debug_result_lock(debug_result_mutex_);
+        debugResultFlag_ = false;
+        debugResultStr_.clear();
+    }
+
+    vector<uint8_t> buf;
+    buildCmd(buf, PACK_TYPE_DEBUG, reinterpret_cast<uint8_t *>(const_cast<char *>(cmd.c_str())), cmd.length());
+    if (comm_inf_->send(&buf[0], buf.size()) != 0)
+    {
+        delete comm_inf_;
+        comm_inf_ = NULL;
+        RCLCPP_ERROR(this->node->get_logger(), "communication failed, reopen the device");
+        heartbeat_timer_->cancel();
+        communication_timer_->cancel();
+        open();
+        communication_timer_->reset();
+        return false;
+    }
+    heartbeat_timer_->cancel();
+    heartbeat_timer_->reset();
+
+    if (timeout_ms == 0)
+    {
+        if (result)
+        {
+            *result = cmd;
+        }
+        return true;
+    }
+
+    std::unique_lock<std::mutex> debug_result_lock(debug_result_mutex_);
+    const bool got_result = debug_result_cv_.wait_for(
+        debug_result_lock, std::chrono::milliseconds(timeout_ms), [this]() { return debugResultFlag_; });
+    if (!got_result)
+    {
+        return false;
+    }
+
+    if (result)
+    {
+        *result = debugResultStr_;
+    }
+    return true;
+}
+
 void TianbotCore::dataProc(uint8_t *data, unsigned int data_len)
 {
     static uint8_t state = 0;
@@ -172,48 +242,15 @@ void TianbotCore::debugCmdCallback(const std_msgs::msg::String::ConstSharedPtr &
 bool TianbotCore::debugCmdSrv(const std::shared_ptr<tianbot_core::srv::DebugCmd::Request> req, 
                               const std::shared_ptr<tianbot_core::srv::DebugCmd::Response> res)
 {
-    vector<uint8_t> buf;
-    debugResultFlag_ = false;
-    uint32_t count = 200;
-    buildCmd(buf, PACK_TYPE_DEBUG, (uint8_t *)req->cmd.c_str(), req->cmd.length());
-    if (comm_inf_->send(&buf[0], buf.size()) != 0)
-    {
-        delete comm_inf_;
-        comm_inf_ = NULL;
-        RCLCPP_ERROR(this->node->get_logger(), "communication failed, reopen the device");
-        heartbeat_timer_->cancel();
-        communication_timer_->cancel();
-        open();
-        communication_timer_->reset();
-    }
     RCLCPP_INFO(this->node->get_logger(), "cmd: %s", req->cmd.c_str());
-    if (req->cmd == "reset")
-    {
-        res->result = "reset";
-        return true;
-    }
-    else if (req->cmd == "param save" || req->cmd == "param reset")
-    {
-        count = 2000;
-    }
-    else if (req->cmd.find("set_") != req->cmd.npos) // adaptation for old racecar
-    {
-        count = 3000;
-    }
-    while (count-- && !debugResultFlag_)
-    {
-        rclcpp::sleep_for(std::chrono::milliseconds(1));
-    }
-    RCLCPP_INFO(this->node->get_logger(), "result: %s", debugResultStr_.c_str());
-    if (debugResultFlag_)
-    {
-        res->result = debugResultStr_;
-        return true;
-    }
-    else
+    std::string result;
+    if (!sendDebugCommandAndWait(req->cmd, debugTimeoutForCommand(req->cmd), &result))
     {
         return false;
     }
+    RCLCPP_INFO(this->node->get_logger(), "result: %s", result.c_str());
+    res->result = result;
+    return true;
 }
 
 void TianbotCore::checkDevType(void)
@@ -225,34 +262,12 @@ void TianbotCore::checkDevType(void)
     string::size_type start;
     string::size_type end;
 
-    string cmd = "param get";
-    vector<uint8_t> buf;
-    uint32_t count;
     uint32_t retry;
 
     for (retry = 0; retry < 5; retry++)
     {
-        debugResultFlag_ = false;
-        count = 300;
-        buf.clear();
-        buildCmd(buf, PACK_TYPE_DEBUG, (uint8_t *)cmd.c_str(), cmd.length());
-        if (comm_inf_->send(&buf[0], buf.size()) != 0)
+        if (sendDebugCommandAndWait("param get", 300, &dev_param))
         {
-            delete comm_inf_;
-            comm_inf_ = NULL;
-            RCLCPP_ERROR(this->node->get_logger(), "communication failed, reopen the device");
-            heartbeat_timer_->cancel();
-            communication_timer_->cancel();
-            open();
-            communication_timer_->reset();
-        }
-        while (count-- && !debugResultFlag_)
-        {
-            rclcpp::sleep_for(std::chrono::milliseconds(1));
-        }
-        if (debugResultFlag_)
-        {
-            dev_param = debugResultStr_;
             break;
         }
         else
@@ -366,9 +381,11 @@ TianbotCore::TianbotCore(const std::shared_ptr<rclcpp::Node> &nh)
     param_set_ = node->create_service<tianbot_core::srv::DebugCmd>(
         "debug_cmd_srv", std::bind(&TianbotCore::debugCmdSrv, this, std::placeholders::_1, std::placeholders::_2));
 
-
-    heartbeat_timer_ = node->create_wall_timer(std::chrono::milliseconds(200), std::bind(&TianbotCore::heartCallback, this));
-    communication_timer_ = node->create_wall_timer(std::chrono::milliseconds(200), std::bind(&TianbotCore::communicationErrorCallback, this));
+    timer_callback_group_ = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    heartbeat_timer_ = node->create_wall_timer(
+        std::chrono::milliseconds(200), std::bind(&TianbotCore::heartCallback, this), timer_callback_group_);
+    communication_timer_ = node->create_wall_timer(
+        std::chrono::milliseconds(200), std::bind(&TianbotCore::communicationErrorCallback, this), timer_callback_group_);
     heartbeat_timer_->cancel();
     communication_timer_->cancel();
     
