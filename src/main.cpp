@@ -7,6 +7,7 @@
 #include "ndi.h"
 #include "omni.h"
 #include "rover.h"
+#include "tianrover.h"
 #include "chassis.h"
 
 int main(int argc, char *argv[])
@@ -60,9 +61,20 @@ int main(int argc, char *argv[])
     {
         core = new TianbotRover(node);
     }
+    else if (type == "tianrover")
+    {
+        core = new TianbotTianrover(node);
+    }
     else if (type == "arm")
     {
         // Add arm initialization here
+    }
+
+    if (core == nullptr)
+    {
+        RCLCPP_FATAL(node->get_logger(), "Unsupported chassis type: %s", type.c_str());
+        rclcpp::shutdown();
+        return 1;
     }
 
     if (type_verify)

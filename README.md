@@ -119,6 +119,20 @@ The `ros2` branch supports `type:=amp` and `type:=ndi` in addition to the generi
 - `ndi` restores `stack_light_ctrl`, `lift_actuator_ctrl`, `line_opto_ctrl` and the related feedback topics.
 - Both keep the existing serial/UDP communication and reconnect behavior used by the ROS 2 node.
 
+## Tianrover Support
+
+`type:=tianrover` supports the Tianrover six-wheel, six-steering chassis. The node forwards
+`cmd_vel.linear.x`, `cmd_vel.linear.y`, and `cmd_vel.angular.z` through `PACK_TYPE_CMD_VEL`;
+the firmware owns kinematics, motor control, and command-timeout protection.
+
+```bash
+ros2 launch tianbot_core tianbot_core.launch.py \
+    type:=tianrover \
+    serial_port:=/dev/tianbot_base
+```
+
+The firmware must report `base_type: tianrover` for type verification to pass.
+
 ### Project Structure
 ```
 ├── CMakeLists.txt

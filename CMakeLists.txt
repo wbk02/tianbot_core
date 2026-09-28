@@ -78,7 +78,7 @@ add_executable(tianbot_core
     src/chassis.cpp
     src/omni.cpp src/ackermann.cpp
     src/differential.cpp src/rover.cpp
-    src/amp.cpp src/ndi.cpp
+    src/amp.cpp src/ndi.cpp src/tianrover.cpp
     src/protocol.cpp
 )
 
