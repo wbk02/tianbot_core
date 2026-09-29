@@ -1,9 +1,11 @@
 #include "core.h"
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/executors/multi_threaded_executor.hpp>
 
 #include "ackermann.h"
 #include "amp.h"
 #include "differential.h"
+#include "dyn.h"
 #include "ndi.h"
 #include "omni.h"
 #include "rover.h"
@@ -57,6 +59,11 @@ int main(int argc, char *argv[])
     {
         core = new TianbotDifferential(node);
     }
+    else if (type == "dyn")
+    {
+        core = new TianbotDyn(node);
+        type_verify = false;
+    }
     else if (type == "rover")
     {
         core = new TianbotRover(node);
@@ -88,7 +95,9 @@ int main(int argc, char *argv[])
     //     rclcpp::spin_some(node);
     //     loop_rate.sleep();
     // }
-    rclcpp::spin(node);
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
     delete core;
     rclcpp::shutdown();
     return 0;

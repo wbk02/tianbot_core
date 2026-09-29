@@ -1,7 +1,110 @@
 #include "chassis.h"
 #include "protocol.h"
 
-void TianbotChasis::tianbotDataProc(unsigned char *buf, int len)
+namespace
+{
+std::string dynDmControlModeToString(uint32_t mode)
+{
+    switch (mode)
+    {
+    case 1:
+        return "mit";
+    case 2:
+        return "pos";
+    case 3:
+        return "speed";
+    default:
+        return "unknown_" + std::to_string(mode);
+    }
+}
+
+std::string dynChassisModeToString(uint32_t mode)
+{
+    switch (mode)
+    {
+    case 0:
+        return "pc_mit";
+    case 1:
+        return "rc_speed";
+    case 2:
+        return "rc_mit";
+    case 3:
+        return "pc_speed";
+    default:
+        return "unknown_" + std::to_string(mode);
+    }
+}
+
+std::string dynMotorStateToString(uint8_t state)
+{
+    switch (state)
+    {
+    case 0:
+        return "offline";
+    case 1:
+        return "online";
+    default:
+        return "unknown_" + std::to_string(state);
+    }
+}
+
+void fillCompactMotorFeedbackMsg(
+    const dm_motor_feedback_array_compact &feedback,
+    const rclcpp::Time &stamp,
+    const std::string &frame_id,
+    tianbot_core::msg::DmMotorFeedbackArray &feedback_msg)
+{
+    feedback_msg.header.stamp = stamp;
+    feedback_msg.header.frame_id = frame_id;
+    feedback_msg.control_mode = dynDmControlModeToString(feedback.control_mode);
+    for (int i = 0; i < 4; ++i)
+    {
+        tianbot_core::msg::DmMotorFeedback motor_msg;
+        motor_msg.id = feedback.motors[i].id;
+        motor_msg.state = dynMotorStateToString(feedback.motors[i].state);
+        motor_msg.control_mode = dynDmControlModeToString(feedback.motors[i].control_mode);
+        motor_msg.output_speed_rad_s = feedback.motors[i].output_speed_rad_s;
+        motor_msg.output_torque_nm = feedback.motors[i].output_torque_nm;
+        motor_msg.mos_temp_c = feedback.motors[i].mos_temp_c;
+        motor_msg.coil_temp_c = feedback.motors[i].coil_temp_c;
+        motor_msg.last_feedback_age_ms = feedback.motors[i].last_feedback_age_ms;
+        feedback_msg.motors[i] = motor_msg;
+    }
+}
+
+void fillCompactMotionModeStatusMsg(
+    const rover_motion_mode_status_compact &status,
+    const rclcpp::Time &stamp,
+    const std::string &frame_id,
+    tianbot_core::msg::RoverMotionModeStatus &status_msg)
+{
+    status_msg.header.stamp = stamp;
+    status_msg.header.frame_id = frame_id;
+    status_msg.chassis_mode = dynChassisModeToString(status.chassis_mode);
+    status_msg.dm_mode = dynDmControlModeToString(status.dm_mode);
+    bool computed_ready = status.ready != 0;
+    for (int i = 0; i < 4; ++i)
+    {
+        status_msg.motor_ctrl_mode[i] = dynDmControlModeToString(status.motor_ctrl_mode[i]);
+        status_msg.motor_state[i] = dynMotorStateToString(status.motor_state[i]);
+        if (status.motor_ctrl_mode[i] != status.dm_mode || status.motor_state[i] != 1U)
+        {
+            computed_ready = false;
+        }
+    }
+    status_msg.ready = computed_ready;
+}
+}
+
+void TianbotChasis::onMotorFeedback(const struct dm_motor_feedback_array &)
+{
+}
+
+void TianbotChasis::onMotionModeStatus(const struct rover_motion_mode_status &)
+{
+}
+
+void TianbotChasis::tianbotDataProc(unsigned char *buf, int)
 {
     if (!publisher_init_done)
     {
@@ -168,6 +271,127 @@ void TianbotChasis::tianbotDataProc(unsigned char *buf, int len)
         }
         break;
 
+    case PACK_TYPE_DM_MOTOR_FEEDBACK:
+        if (sizeof(struct dm_motor_feedback_array) == p->len - 2)
+        {
+            const auto feedback = reinterpret_cast<struct dm_motor_feedback_array *>(p->data);
+            tianbot_core::msg::DmMotorFeedbackArray feedback_msg;
+
+            feedback_msg.header.stamp = clock_->now();
+            feedback_msg.header.frame_id = base_frame_;
+            feedback_msg.control_mode = dynDmControlModeToString(feedback->control_mode);
+            for (int i = 0; i < 4; ++i)
+            {
+                tianbot_core::msg::DmMotorFeedback motor_msg;
+                motor_msg.id = feedback->motors[i].id;
+                motor_msg.state = dynMotorStateToString(feedback->motors[i].state);
+                motor_msg.control_mode = dynDmControlModeToString(feedback->motors[i].control_mode);
+                motor_msg.output_speed_rad_s = feedback->motors[i].output_speed_rad_s;
+                motor_msg.output_torque_nm = feedback->motors[i].output_torque_nm;
+                motor_msg.mos_temp_c = feedback->motors[i].mos_temp_c;
+                motor_msg.coil_temp_c = feedback->motors[i].coil_temp_c;
+                motor_msg.last_feedback_age_ms = feedback->motors[i].last_feedback_age_ms;
+                feedback_msg.motors[i] = motor_msg;
+            }
+            if (motor_feedback_pub_)
+            {
+                motor_feedback_pub_->publish(feedback_msg);
+            }
+            onMotorFeedback(*feedback);
+        }
+        else if (sizeof(struct dm_motor_feedback_array_compact) == p->len - 2)
+        {
+            const auto feedback = reinterpret_cast<struct dm_motor_feedback_array_compact *>(p->data);
+            tianbot_core::msg::DmMotorFeedbackArray feedback_msg;
+            dm_motor_feedback_array feedback_full = {};
+
+            fillCompactMotorFeedbackMsg(*feedback, clock_->now(), base_frame_, feedback_msg);
+            if (motor_feedback_pub_)
+            {
+                motor_feedback_pub_->publish(feedback_msg);
+            }
+
+            feedback_full.control_mode = feedback->control_mode;
+            for (int i = 0; i < 4; ++i)
+            {
+                feedback_full.motors[i].id = feedback->motors[i].id;
+                feedback_full.motors[i].state = feedback->motors[i].state;
+                feedback_full.motors[i].control_mode = feedback->motors[i].control_mode;
+                feedback_full.motors[i].output_speed_rad_s = feedback->motors[i].output_speed_rad_s;
+                feedback_full.motors[i].output_torque_nm = feedback->motors[i].output_torque_nm;
+                feedback_full.motors[i].mos_temp_c = feedback->motors[i].mos_temp_c;
+                feedback_full.motors[i].coil_temp_c = feedback->motors[i].coil_temp_c;
+                feedback_full.motors[i].last_feedback_age_ms = feedback->motors[i].last_feedback_age_ms;
+            }
+            onMotorFeedback(feedback_full);
+        }
+        else
+        {
+            RCLCPP_WARN(this->node->get_logger(),
+                        "DYN dm motor feedback size mismatch, expect %zu or %zu got %u",
+                        sizeof(struct dm_motor_feedback_array),
+                        sizeof(struct dm_motor_feedback_array_compact), p->len - 2);
+        }
+        break;
+
+    case PACK_TYPE_ROVER_MOTION_MODE_STATUS:
+        if (sizeof(struct rover_motion_mode_status) == p->len - 2)
+        {
+            const auto status = reinterpret_cast<struct rover_motion_mode_status *>(p->data);
+            tianbot_core::msg::RoverMotionModeStatus status_msg;
+            bool computed_ready = status->ready != 0;
+
+            status_msg.header.stamp = clock_->now();
+            status_msg.header.frame_id = base_frame_;
+            status_msg.chassis_mode = dynChassisModeToString(status->chassis_mode);
+            status_msg.dm_mode = dynDmControlModeToString(status->dm_mode);
+            for (int i = 0; i < 4; ++i)
+            {
+                status_msg.motor_ctrl_mode[i] = dynDmControlModeToString(status->motor_ctrl_mode[i]);
+                status_msg.motor_state[i] = dynMotorStateToString(status->motor_state[i]);
+                if (status->motor_ctrl_mode[i] != status->dm_mode || status->motor_state[i] != 1U)
+                {
+                    computed_ready = false;
+                }
+            }
+            status_msg.ready = computed_ready;
+            if (motion_mode_status_pub_)
+            {
+                motion_mode_status_pub_->publish(status_msg);
+            }
+            onMotionModeStatus(*status);
+        }
+        else if (sizeof(struct rover_motion_mode_status_compact) == p->len - 2)
+        {
+            const auto status = reinterpret_cast<struct rover_motion_mode_status_compact *>(p->data);
+            tianbot_core::msg::RoverMotionModeStatus status_msg;
+            rover_motion_mode_status status_full = {};
+
+            fillCompactMotionModeStatusMsg(*status, clock_->now(), base_frame_, status_msg);
+            if (motion_mode_status_pub_)
+            {
+                motion_mode_status_pub_->publish(status_msg);
+            }
+
+            status_full.chassis_mode = status->chassis_mode;
+            status_full.dm_mode = status->dm_mode;
+            status_full.ready = status_msg.ready ? 1U : 0U;
+            for (int i = 0; i < 4; ++i)
+            {
+                status_full.motor_ctrl_mode[i] = status->motor_ctrl_mode[i];
+                status_full.motor_state[i] = status->motor_state[i];
+            }
+            onMotionModeStatus(status_full);
+        }
+        else
+        {
+            RCLCPP_WARN(this->node->get_logger(),
+                        "DYN motion mode status size mismatch, expect %zu or %zu got %u",
+                        sizeof(struct rover_motion_mode_status),
+                        sizeof(struct rover_motion_mode_status_compact), p->len - 2);
+        }
+        break;
+
     case PACK_TYPE_HEART_BEAT_RESPONSE:
         break;
 
@@ -198,8 +422,12 @@ void TianbotChasis::tianbotDataProc(unsigned char *buf, int len)
             std_msgs::msg::String debug_msg;
             p->data[p->len - 2] = '\0';
             debug_msg.data = (char *)(p->data);
-            debugResultStr_ = (char *)(p->data);
-            debugResultFlag_ = true;
+            {
+                std::lock_guard<std::mutex> debug_result_lock(debug_result_mutex_);
+                debugResultStr_ = (char *)(p->data);
+                debugResultFlag_ = true;
+            }
+            debug_result_cv_.notify_all();
             debug_result_pub_->publish(debug_msg);
         }
         break;

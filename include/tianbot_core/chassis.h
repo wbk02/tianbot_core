@@ -15,6 +15,8 @@
 #include "std_msgs/msg/float32.hpp"
 #include "std_msgs/msg/u_int8.hpp"
 #include "std_msgs/msg/u_int8_multi_array.hpp"
+#include "tianbot_core/msg/dm_motor_feedback_array.hpp"
+#include "tianbot_core/msg/rover_motion_mode_status.hpp"
 #include "core.h"
 
 #ifdef BUILD_BEFORE_HUMBLE
@@ -40,6 +42,10 @@ protected:
     rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr lift_actuator_state_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr lift_actuator_position_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr spindle_vel_pub_;
+    rclcpp::Publisher<tianbot_core::msg::DmMotorFeedbackArray>::SharedPtr motor_feedback_pub_;
+    rclcpp::Publisher<tianbot_core::msg::RoverMotionModeStatus>::SharedPtr motion_mode_status_pub_;
+    virtual void onMotorFeedback(const struct dm_motor_feedback_array &feedback);
+    virtual void onMotionModeStatus(const struct rover_motion_mode_status &status);
 
 private:
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
