@@ -37,7 +37,7 @@ class MiniGateway {
  private:
   void command(const geometry_msgs::Twist::ConstPtr &cmd) {
     if (session_id_ == 0) { ROS_WARN_THROTTLE(5.0, "Mini session_id is zero; command rejected"); return; }
-    std::vector<uint8_t> payload(18U); write_u32(payload.data(), static_cast<uint32_t>(session_id_)); write_u32(payload.data() + 4U, command_sequence_++); std::memcpy(payload.data() + 8U, &cmd->linear.x, 4U); std::memcpy(payload.data() + 12U, &cmd->angular.z, 4U); payload[16] = 0xf4U; payload[17] = 0x01U; std::vector<uint8_t> packet; if (encode_frame(0x11U, frame_sequence_++, payload, &packet)) (void)::sendto(socket_, packet.data(), packet.size(), 0, reinterpret_cast<sockaddr *>(&remote_), sizeof(remote_));
+    std::vector<uint8_t> payload(18U); write_u32(payload.data(), static_cast<uint32_t>(session_id_)); write_u32(payload.data() + 4U, command_sequence_++); const float vx = static_cast<float>(cmd->linear.x); const float wz = static_cast<float>(cmd->angular.z); std::memcpy(payload.data() + 8U, &vx, sizeof(vx)); std::memcpy(payload.data() + 12U, &wz, sizeof(wz)); payload[16] = 0xf4U; payload[17] = 0x01U; std::vector<uint8_t> packet; if (encode_frame(0x11U, frame_sequence_++, payload, &packet)) (void)::sendto(socket_, packet.data(), packet.size(), 0, reinterpret_cast<sockaddr *>(&remote_), sizeof(remote_));
   }
   void receive(const ros::TimerEvent &) {
     std::array<uint8_t, 1216> packet{}; const auto bytes = ::recv(socket_, packet.data(), packet.size(), MSG_DONTWAIT); if (bytes <= 0) return; tianbot_core::mini_v1_5::Frame frame{}; if (!tianbot_core::mini_v1_5::decode_mini_frame(packet.data(), static_cast<size_t>(bytes), &frame)) return;
