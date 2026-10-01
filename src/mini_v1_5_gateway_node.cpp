@@ -39,7 +39,8 @@ class MiniGateway final : public rclcpp::Node {
   void send_velocity(const geometry_msgs::msg::Twist &cmd) {
     if (session_id_ == 0U) { RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "session_id is zero; command rejected"); return; }
     std::vector<uint8_t> payload(18U); mini::write_u32(payload.data(), session_id_); mini::write_u32(payload.data() + 4U, command_sequence_++);
-    std::memcpy(payload.data() + 8U, &cmd.linear.x, 4U); std::memcpy(payload.data() + 12U, &cmd.angular.z, 4U); payload[16] = 0xf4U; payload[17] = 0x01U;
+    const float vx = static_cast<float>(cmd.linear.x); const float wz = static_cast<float>(cmd.angular.z);
+    std::memcpy(payload.data() + 8U, &vx, sizeof(vx)); std::memcpy(payload.data() + 12U, &wz, sizeof(wz)); payload[16] = 0xf4U; payload[17] = 0x01U;
     std::vector<uint8_t> packet; if (!mini::encode_frame(0x11U, 0U, frame_sequence_++, payload, &packet)) return;
     (void)::sendto(socket_, packet.data(), packet.size(), 0, reinterpret_cast<sockaddr *>(&remote_), sizeof(remote_));
   }
