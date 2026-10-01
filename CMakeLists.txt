@@ -89,6 +89,8 @@ add_executable(tianbot_core
     src/amp.cpp src/ndi.cpp
     src/dyn.cpp
     src/protocol.cpp
+    src/mini_v1_protocol.cpp
+    src/mini_v1_gateway.cpp
 )
 
 # get include directories of custom msg headers
