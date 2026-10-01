@@ -1,0 +1,6 @@
+<launch>
+  <node pkg="tianbot_core" type="mini_v1_5_gateway" name="mini_v1_5_gateway" ns="mini" output="screen">
+    <param name="remote_ip" value="192.168.4.1" />
+    <param name="session_id" value="0" />
+  </node>
+</launch>

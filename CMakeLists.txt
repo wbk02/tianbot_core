@@ -147,6 +147,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME} src/core.cpp src/serial.cpp src/udp.cpp src/main.cpp src/chassis.cpp src/omni.cpp src/ackermann.cpp src/differential.cpp src/rover.cpp src/amp.cpp src/ndi.cpp src/protocol.cpp src/mini_v1_gateway.cpp)
+add_executable(mini_v1_5_gateway src/mini_v1_5_gateway_node.cpp src/mini_v1_gateway.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -164,6 +165,7 @@ target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
   pthread
 )
+target_link_libraries(mini_v1_5_gateway ${catkin_LIBRARIES} pthread)
 
 #############
 ## Install ##
