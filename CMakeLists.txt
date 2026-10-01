@@ -93,6 +93,11 @@ add_executable(tianbot_core
     src/mini_v1_gateway.cpp
 )
 
+add_executable(mini_v1_5_gateway
+    src/mini_v1_5_gateway_node.cpp
+    src/mini_v1_protocol.cpp
+)
+
 # get include directories of custom msg headers
 if(ENV{ROS_DISTRO} STREQUAL "humble")
     rosidl_get_typesupport_target(cpp_typesupport_target
@@ -118,9 +123,11 @@ target_link_libraries(tianbot_core
 )
 
 ament_target_dependencies(tianbot_core ${dependencies})
+ament_target_dependencies(mini_v1_5_gateway rclcpp geometry_msgs nav_msgs sensor_msgs)
+target_include_directories(mini_v1_5_gateway PRIVATE include)
 
 # Install
-install(TARGETS tianbot_core
+install(TARGETS tianbot_core mini_v1_5_gateway
     DESTINATION lib/${PROJECT_NAME}
 )
 
