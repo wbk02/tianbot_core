@@ -23,6 +23,7 @@ class MiniGateway final : public rclcpp::Node {
     remote_ip_ = declare_parameter<std::string>("remote_ip", "192.168.4.1");
     const auto command_port = declare_parameter<int>("command_port", 5000);
     const auto telemetry_port = declare_parameter<int>("telemetry_port", 5001);
+    const auto lidar_port = declare_parameter<int>("lidar_port", 5002);
     management_port_ = declare_parameter<int>("management_port", 5003);
     session_id_ = static_cast<uint32_t>(declare_parameter<int>("session_id", 0));
     socket_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -32,6 +33,11 @@ class MiniGateway final : public rclcpp::Node {
     if (inet_pton(AF_INET, remote_ip_.c_str(), &remote_.sin_addr) != 1) throw std::runtime_error("invalid remote_ip");
     sockaddr_in local{}; local.sin_family = AF_INET; local.sin_port = htons(static_cast<uint16_t>(telemetry_port)); local.sin_addr.s_addr = htonl(INADDR_ANY);
     if (::bind(socket_, reinterpret_cast<sockaddr *>(&local), sizeof(local)) != 0) throw std::runtime_error("cannot bind Mini telemetry socket");
+    lidar_socket_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (lidar_socket_ < 0) throw std::runtime_error("cannot create Mini lidar UDP socket");
+    local.sin_port = htons(static_cast<uint16_t>(lidar_port));
+    if (::bind(lidar_socket_, reinterpret_cast<sockaddr *>(&local), sizeof(local)) != 0)
+      throw std::runtime_error("cannot bind Mini lidar socket");
     management_ = remote_; management_.sin_port = htons(static_cast<uint16_t>(management_port_));
     odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("odom", 10);
     imu_pub_ = create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
@@ -40,7 +46,7 @@ class MiniGateway final : public rclcpp::Node {
     rx_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this] { receive(); });
     discovery_timer_ = create_wall_timer(std::chrono::seconds(1), [this] { discover_or_confirm(); });
   }
-  ~MiniGateway() override { if (socket_ >= 0) ::close(socket_); }
+  ~MiniGateway() override { if (socket_ >= 0) ::close(socket_); if (lidar_socket_ >= 0) ::close(lidar_socket_); }
  private:
   void send_velocity(const geometry_msgs::msg::Twist &cmd) {
     if (session_id_ == 0U) { RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "session_id is zero; command rejected"); return; }
@@ -67,8 +73,13 @@ class MiniGateway final : public rclcpp::Node {
     }
   }
   void receive() {
+    receive_from(socket_);
+    receive_from(lidar_socket_);
+  }
+  void receive_from(int fd) {
+    if (fd < 0) return;
     std::array<uint8_t, 1216> packet{};
-    const auto bytes = ::recv(socket_, packet.data(), packet.size(), MSG_DONTWAIT);
+    const auto bytes = ::recv(fd, packet.data(), packet.size(), MSG_DONTWAIT);
     if (bytes <= 0) return;
     mini::Frame frame{}; if (!mini::decode_frame(packet.data(), static_cast<size_t>(bytes), &frame)) return;
     if (frame.type == 0x22U && frame.payload.size() == 28U) publish_odom(frame.payload);
@@ -93,7 +104,7 @@ class MiniGateway final : public rclcpp::Node {
     bool complete = true; for (const float range : scan_ranges_) if (std::isnan(range)) { complete = false; break; }
     if (complete) { sensor_msgs::msg::LaserScan scan; scan.header.stamp = now(); scan.header.frame_id = "laser"; scan.angle_min = angle_min_; scan.angle_increment = angle_increment_; scan.angle_max = angle_min_ + angle_increment_ * static_cast<float>(count - 1U); scan.range_min = range_min_; scan.range_max = range_max_; scan.ranges = scan_ranges_; scan_pub_->publish(scan); scan_id_ = 0U; scan_ranges_.clear(); }
   }
-  int socket_{-1}, management_port_{5003}; sockaddr_in remote_{}, management_{}; std::string remote_ip_; uint32_t session_id_{0}, pending_session_{0}, frame_sequence_{1}, command_sequence_{1}, discovery_request_{1}, scan_id_{0}; bool discovered_{false}; std::array<uint8_t, 6> mac_{}; std::vector<float> scan_ranges_; float angle_min_{}, angle_increment_{}, range_min_{}, range_max_{};
+  int socket_{-1}, lidar_socket_{-1}, management_port_{5003}; sockaddr_in remote_{}, management_{}; std::string remote_ip_; uint32_t session_id_{0}, pending_session_{0}, frame_sequence_{1}, command_sequence_{1}, discovery_request_{1}, scan_id_{0}; bool discovered_{false}; std::array<uint8_t, 6> mac_{}; std::vector<float> scan_ranges_; float angle_min_{}, angle_increment_{}, range_min_{}, range_max_{};
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_; rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_; rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_pub_; rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_; rclcpp::TimerBase::SharedPtr rx_timer_, discovery_timer_;
 };
 int main(int argc, char **argv) { rclcpp::init(argc, argv); rclcpp::spin(std::make_shared<MiniGateway>()); rclcpp::shutdown(); return 0; }
