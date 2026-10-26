@@ -204,7 +204,8 @@ private:
       pending_session_ = mini::read_u32(x.payload.data() + 6);
       return;
     }
-    if (x.type == mini::kHeartbeat && x.payload.size() == 10) {
+    if (x.type == mini::kHeartbeat && x.payload.size() == 10 &&
+        std::equal(mac_.begin(), mac_.end(), x.payload.begin())) {
       online_ = true;
       last_rx_ = now();
       publish_link(true);
