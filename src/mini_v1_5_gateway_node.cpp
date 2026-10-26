@@ -218,7 +218,7 @@ private:
         return;
       mac_ = d.mac;
       found_ = true;
-      publish_state(d.state, d.faults, 0, 0);
+      publish_state(d.state, d.faults, 0, 0, false);
       return;
     }
     if (x.type == mini::kSessionGrant && x.payload.size() == 13 &&
@@ -233,7 +233,7 @@ private:
       last_rx_ = now();
       publish_link(true);
       publish_state(x.payload[6], mini::read_u16(x.payload.data() + 7), 0,
-                    x.payload[9]);
+                    x.payload[9], false);
       return;
     }
     if (x.type == mini::kVehicleState && x.payload.size() == 6) {
@@ -241,7 +241,7 @@ private:
       last_rx_ = now();
       publish_link(true);
       publish_state(x.payload[0], mini::read_u16(x.payload.data() + 1),
-                    mini::read_u16(x.payload.data() + 3), x.payload[5]);
+                    mini::read_u16(x.payload.data() + 3), x.payload[5], true);
       return;
     }
     if (x.type == mini::kOdometry && x.payload.size() == 28) {
@@ -264,16 +264,19 @@ private:
     m.data = v;
     link_->publish(m);
   }
-  void publish_state(uint8_t s, uint16_t f, uint16_t mv, uint8_t src) {
+  void publish_state(uint8_t s, uint16_t f, uint16_t mv, uint8_t src,
+                     bool has_battery_voltage) {
     std_msgs::msg::UInt32 m;
     m.data = s | (uint32_t(f) << 8) | (uint32_t(src) << 24);
     state_->publish(m);
-    sensor_msgs::msg::BatteryState b;
-    b.header.stamp = now();
-    b.header.frame_id = base_frame_;
-    b.voltage = float(mv) / 1000.f;
-    b.percentage = std::numeric_limits<float>::quiet_NaN();
-    battery_->publish(b);
+    if (has_battery_voltage) {
+      sensor_msgs::msg::BatteryState b;
+      b.header.stamp = now();
+      b.header.frame_id = base_frame_;
+      b.voltage = float(mv) / 1000.f;
+      b.percentage = std::numeric_limits<float>::quiet_NaN();
+      battery_->publish(b);
+    }
   }
   void publish_odom(const std::vector<uint8_t> &p) {
     nav_msgs::msg::Odometry m;
@@ -309,7 +312,7 @@ private:
     auto cnt = mini::read_u16(p.data() + 6);
     auto start = mini::read_u16(p.data() + 8);
     auto bins = p[10];
-    if (!cnt || idx >= cnt || !bins || start + bins > 90 ||
+    if (!cnt || idx >= cnt || !bins || p[11] != 0 || start + bins > 90 ||
         p.size() != 12 + size_t(bins) * 2)
       return;
     if (id != scan_id_ || cnt != frag_count_) {
