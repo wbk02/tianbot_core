@@ -196,6 +196,19 @@ private:
       battery_.publish(q);
       return;
     }
+    if (x.type == 0x34 && x.payload.size() == 10) {
+      online_ = true;
+      last_rx_ = ros::Time::now();
+      std_msgs::Bool l;
+      l.data = true;
+      link_.publish(l);
+      std_msgs::UInt32 s;
+      s.data = x.payload[6] |
+               (uint32_t(mini::read_u16(x.payload.data() + 7)) << 8) |
+               (uint32_t(x.payload[9]) << 24);
+      state_.publish(s);
+      return;
+    }
     if (x.type == 0x22 && x.payload.size() == 28) {
       online_ = true;
       last_rx_ = ros::Time::now();
