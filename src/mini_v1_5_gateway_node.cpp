@@ -213,7 +213,8 @@ private:
       battery_.publish(q);
       return;
     }
-    if (x.type == 0x34 && x.payload.size() == 10) {
+    if (x.type == 0x34 && x.payload.size() == 10 &&
+        std::equal(mac_.begin(), mac_.end(), x.payload.begin())) {
       online_ = true;
       last_rx_ = ros::Time::now();
       std_msgs::Bool l;
