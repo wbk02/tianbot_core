@@ -41,7 +41,9 @@ public:
     n_.param("device_name", name_, std::string());
     std::string mac_text;
     n_.param("device_mac", mac_text, std::string());
-    mac_filter_valid_ = parse_mac(mac_text, &mac_filter_);
+    if (!mac_text.empty() && !parse_mac(mac_text, &mac_filter_))
+      throw std::invalid_argument("device_mac must be aa:bb:cc:dd:ee:ff");
+    mac_filter_valid_ = !mac_text.empty();
     n_.param("command_port", cmd_port_, 5000);
     n_.param("management_port", mgmt_port_, 5003);
     n_.param("bind_telemetry_port", telemetry_, 5001);
@@ -54,17 +56,32 @@ public:
     int initial_session = 0;
     n_.param("session_id", initial_session, 0);
     session_ = static_cast<uint32_t>(initial_session);
+    if (cmd_port_ < 1 || cmd_port_ > 65535 || mgmt_port_ < 1 ||
+        mgmt_port_ > 65535 || telemetry_ < 1 || telemetry_ > 65535 ||
+        lidar_port_ < 1 || lidar_port_ > 65535 || timeout_ <= 0 ||
+        timeout_ > 65535 || max_v_ < 0.0 || max_w_ < 0.0)
+      throw std::invalid_argument("invalid gateway parameter range");
     fd_ = socket(AF_INET, SOCK_DGRAM, 0);
     lfd_ = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd_ < 0 || lfd_ < 0)
+    if (fd_ < 0 || lfd_ < 0) {
+      if (fd_ >= 0) close(fd_);
+      if (lfd_ >= 0) close(lfd_);
       throw std::runtime_error("socket");
+    }
     remote_ = {};
     remote_.sin_family = AF_INET;
     remote_.sin_port = htons(cmd_port_);
     if (inet_pton(AF_INET, ip_.c_str(), &remote_.sin_addr) != 1)
       throw std::runtime_error("remote_ip");
-    bindfd(fd_, telemetry_);
-    bindfd(lfd_, lidar_port_);
+    try {
+      bindfd(fd_, telemetry_);
+      bindfd(lfd_, lidar_port_);
+    } catch (...) {
+      close(fd_);
+      close(lfd_);
+      fd_ = lfd_ = -1;
+      throw;
+    }
     mgmt_ = remote_;
     mgmt_.sin_port = htons(mgmt_port_);
     cmd_ = n_.subscribe("cmd_vel", 10, &Gateway::velocity, this);
@@ -165,8 +182,13 @@ private:
   }
   void recv(int f) {
     uint8_t b[1216]{};
-    auto n = recvfrom(f, b, sizeof(b), MSG_DONTWAIT, nullptr, nullptr);
+    sockaddr_in source{};
+    socklen_t source_len = sizeof(source);
+    auto n = recvfrom(f, b, sizeof(b), MSG_DONTWAIT,
+                      reinterpret_cast<sockaddr *>(&source), &source_len);
     if (n <= 0)
+      return;
+    if (source.sin_addr.s_addr != remote_.sin_addr.s_addr)
       return;
     mini::Frame x{};
     if (!mini::decode_mini_frame(b, n, &x))
