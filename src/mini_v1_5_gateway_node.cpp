@@ -59,7 +59,10 @@ public:
     timeout_ms_ = declare_parameter<int>("command_timeout_ms", 500);
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     lidar_frame_ = declare_parameter<std::string>("lidar_frame", "laser");
-    session_ = static_cast<uint32_t>(declare_parameter<int>("session_id", 0));
+    auto initial_session = declare_parameter<int>("session_id", 0);
+    if (initial_session < 0)
+      throw std::invalid_argument("session_id must be non-negative");
+    session_ = static_cast<uint32_t>(initial_session);
     if (command_port_ < 1 || command_port_ > 65535 || management_port_ < 1 ||
         management_port_ > 65535 || bind_telemetry_port_ < 1 ||
         bind_telemetry_port_ > 65535 || bind_lidar_port_ < 1 ||
@@ -169,6 +172,8 @@ private:
     }
     if (session_)
       return;
+    if (pending_session_ == 0)
+      return;
     std::vector<uint8_t> p(13);
     std::copy(mac_.begin(), mac_.end(), p.begin());
     mini::write_u32(p.data() + 6, pending_session_);
@@ -224,7 +229,9 @@ private:
     if (x.type == mini::kSessionGrant && x.payload.size() == 13 &&
         x.payload[12] == 0 &&
         std::equal(mac_.begin(), mac_.end(), x.payload.begin())) {
-      pending_session_ = mini::read_u32(x.payload.data() + 6);
+      auto granted = mini::read_u32(x.payload.data() + 6);
+      if (granted != 0)
+        pending_session_ = granted;
       return;
     }
     if (x.type == mini::kHeartbeat && x.payload.size() == 10 &&
