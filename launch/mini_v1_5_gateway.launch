@@ -1,6 +1,10 @@
 <launch>
-  <node pkg="tianbot_core" type="mini_v1_5_gateway" name="mini_v1_5_gateway" ns="mini" output="screen">
-    <param name="remote_ip" value="192.168.4.1" />
-    <param name="session_id" value="0" />
+  <arg name="namespace" default="robot"/>
+  <arg name="remote_ip" default="192.168.4.1"/>
+  <arg name="device_name" default=""/>
+  <node pkg="tianbot_core" type="mini_v1_5_gateway" name="mini_v1_5_gateway" ns="$(arg namespace)" output="screen">
+    <param name="remote_ip" value="$(arg remote_ip)"/>
+    <param name="device_name" value="$(arg device_name)"/>
+    <param name="session_id" value="0"/>
   </node>
 </launch>
