@@ -55,6 +55,8 @@ public:
     n_.param("lidar_frame", laser_, std::string("laser"));
     int initial_session = 0;
     n_.param("session_id", initial_session, 0);
+    if (initial_session < 0)
+      throw std::invalid_argument("session_id must be non-negative");
     session_ = static_cast<uint32_t>(initial_session);
     if (cmd_port_ < 1 || cmd_port_ > 65535 || mgmt_port_ < 1 ||
         mgmt_port_ > 65535 || telemetry_ < 1 || telemetry_ > 65535 ||
@@ -154,6 +156,8 @@ private:
     }
     if (session_)
       return;
+    if (pending_session_ == 0)
+      return;
     std::vector<uint8_t> p(13);
     memcpy(p.data(), mac_.data(), 6);
     mini::write_u32(p.data() + 6, pending_session_);
@@ -213,7 +217,9 @@ private:
     if (x.type == 0x35 && x.payload.size() == 13 &&
         std::equal(mac_.begin(), mac_.end(), x.payload.begin()) &&
         x.payload[12] == 0) {
-      pending_session_ = mini::read_u32(x.payload.data() + 6);
+      auto granted = mini::read_u32(x.payload.data() + 6);
+      if (granted != 0)
+        pending_session_ = granted;
       return;
     }
     if (x.type == 0x20 && x.payload.size() == 6) {
