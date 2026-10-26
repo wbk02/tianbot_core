@@ -19,6 +19,16 @@
 #include <unistd.h>
 #include <vector>
 namespace mini = tianbot_core::mini_v1_5;
+bool parse_mac(const std::string &s, std::array<uint8_t, 6> *out) {
+  unsigned int v[6]{};
+  if (!out || s.empty() ||
+      std::sscanf(s.c_str(), "%2x:%2x:%2x:%2x:%2x:%2x", &v[0], &v[1], &v[2],
+                  &v[3], &v[4], &v[5]) != 6)
+    return false;
+  for (size_t i = 0; i < 6; ++i)
+    (*out)[i] = static_cast<uint8_t>(v[i]);
+  return true;
+}
 template <class T> T load(const uint8_t *p) {
   T v{};
   std::memcpy(&v, p, sizeof(v));
@@ -29,6 +39,9 @@ public:
   Gateway(ros::NodeHandle &n) : n_(n) {
     n_.param("remote_ip", ip_, std::string("192.168.4.1"));
     n_.param("device_name", name_, std::string());
+    std::string mac_text;
+    n_.param("device_mac", mac_text, std::string());
+    mac_filter_valid_ = parse_mac(mac_text, &mac_filter_);
     n_.param("command_port", cmd_port_, 5000);
     n_.param("management_port", mgmt_port_, 5003);
     n_.param("bind_telemetry_port", telemetry_, 5001);
@@ -167,6 +180,10 @@ private:
         d.resize(nul);
       if (!name_.empty() && d != name_)
         return;
+      if (mac_filter_valid_ &&
+          !std::equal(mac_filter_.begin(), mac_filter_.end(),
+                      x.payload.begin() + 4))
+        return;
       memcpy(mac_.data(), x.payload.data() + 4, 6);
       found_ = true;
       return;
@@ -299,10 +316,10 @@ private:
   double max_v_{1.5}, max_w_{2};
   uint32_t session_{0}, pending_session_{0}, seq_{1}, cmdseq_{1}, req_{1},
       pending_req_{0}, scan_id_{0};
-  bool found_{false}, online_{false}, active_{false};
+  bool found_{false}, online_{false}, active_{false}, mac_filter_valid_{false};
   std::string ip_, name_, base_, laser_;
   sockaddr_in remote_{}, mgmt_{};
-  std::array<uint8_t, 6> mac_{};
+  std::array<uint8_t, 6> mac_{}, mac_filter_{};
   uint16_t frag_count_{0}, seen_{0};
   std::vector<bool> got_;
   std::vector<float> ranges_;
