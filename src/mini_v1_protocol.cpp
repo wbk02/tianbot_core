@@ -1,12 +1,13 @@
 #include "tianbot_core/mini_v1_protocol.hpp"
-
+#include <algorithm>
+#include <cctype>
+#include <cstring>
+#include <cstdio>
 namespace tianbot_core::mini_v1_5 {
-namespace { void u16_put(std::uint8_t *p, std::uint16_t v) { p[0] = static_cast<std::uint8_t>(v); p[1] = static_cast<std::uint8_t>(v >> 8); } }
-std::uint16_t read_u16(const std::uint8_t *p) { return static_cast<std::uint16_t>(p[0]) | static_cast<std::uint16_t>(p[1]) << 8; }
-std::uint32_t read_u32(const std::uint8_t *p) { return static_cast<std::uint32_t>(p[0]) | static_cast<std::uint32_t>(p[1]) << 8 | static_cast<std::uint32_t>(p[2]) << 16 | static_cast<std::uint32_t>(p[3]) << 24; }
-void write_u32(std::uint8_t *p, std::uint32_t v) { p[0] = static_cast<std::uint8_t>(v); p[1] = static_cast<std::uint8_t>(v >> 8); p[2] = static_cast<std::uint8_t>(v >> 16); p[3] = static_cast<std::uint8_t>(v >> 24); }
-std::uint32_t crc32(const std::uint8_t *data, std::size_t size) { std::uint32_t crc = 0xffffffffU; for (std::size_t i = 0; i < size; ++i) { crc ^= data[i]; for (int bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ ((crc & 1U) ? 0xedb88320U : 0U); } return crc ^ 0xffffffffU; }
-bool decode_frame(const std::uint8_t *data, std::size_t size, Frame *frame) { if (!data || !frame || size < kFrameOverhead || read_u16(data) != kMagic || data[2] != 1 || data[5] != kHeaderSize) return false; const auto payload_size = read_u16(data + 10); if (size != kFrameOverhead + payload_size || read_u32(data + kHeaderSize + payload_size) != crc32(data, kHeaderSize + payload_size)) return false; frame->type = data[3]; frame->flags = data[4]; frame->sequence = read_u32(data + 6); frame->payload.assign(data + kHeaderSize, data + kHeaderSize + payload_size); return true; }
-bool encode_frame(std::uint8_t type, std::uint8_t flags, std::uint32_t sequence, const std::vector<std::uint8_t> &payload, std::vector<std::uint8_t> *out)
-{ if (out == nullptr || payload.size() > 1200U || (flags & ~0x03U) != 0U) return false; out->resize(kFrameOverhead + payload.size()); auto *p = out->data(); u16_put(p, kMagic); p[2] = 1; p[3] = type; p[4] = flags; p[5] = kHeaderSize; write_u32(p + 6, sequence); u16_put(p + 10, static_cast<std::uint16_t>(payload.size())); std::copy(payload.begin(), payload.end(), p + kHeaderSize); write_u32(p + kHeaderSize + payload.size(), crc32(p, kHeaderSize + payload.size())); return true; }
+void write_u16(std::uint8_t*p,std::uint16_t v){p[0]=v;p[1]=v>>8;} std::uint16_t read_u16(const std::uint8_t*p){return p[0]|(p[1]<<8);} std::uint32_t read_u32(const std::uint8_t*p){return p[0]|(p[1]<<8)|(p[2]<<16)|(p[3]<<24);} void write_u32(std::uint8_t*p,std::uint32_t v){p[0]=v;p[1]=v>>8;p[2]=v>>16;p[3]=v>>24;}
+std::uint32_t crc32(const std::uint8_t*d,std::size_t n){std::uint32_t c=0xffffffffU;for(std::size_t i=0;i<n;i++){c^=d[i];for(int b=0;b<8;b++)c=(c>>1)^((c&1U)?0xedb88320U:0);}return c^0xffffffffU;}
+bool decode_frame(const std::uint8_t*d,std::size_t n,Frame*f){if(!d||!f||n<kFrameOverhead||read_u16(d)!=kMagic||d[2]!=1||d[5]!=kHeaderSize)return false;auto l=read_u16(d+10);if(n!=kFrameOverhead+l||l>1200||read_u32(d+12+l)!=crc32(d,12+l))return false;f->type=d[3];f->flags=d[4];f->sequence=read_u32(d+6);f->payload.assign(d+12,d+12+l);return true;}
+bool encode_frame(std::uint8_t t,std::uint8_t fl,std::uint32_t seq,const std::vector<std::uint8_t>&p,std::vector<std::uint8_t>*o){if(!o||p.size()>1200)return false;o->assign(kFrameOverhead+p.size(),0);auto*d=o->data();write_u16(d,kMagic);d[2]=1;d[3]=t;d[4]=fl;d[5]=12;write_u32(d+6,seq);write_u16(d+10,p.size());std::copy(p.begin(),p.end(),d+12);write_u32(d+12+p.size(),crc32(d,12+p.size()));return true;}
+bool parse_discovery(const Frame&f,DeviceInfo*i){if(!i||f.type!=kDiscoverResponse||f.payload.size()!=49)return false;std::copy_n(f.payload.begin()+4,6,i->mac.begin());i->name.assign(reinterpret_cast<const char*>(f.payload.data()+10),32); { auto z=i->name.find('\0'); if(z!=std::string::npos) i->name.resize(z); }i->firmware_version=read_u32(f.payload.data()+42);i->state=f.payload[46];i->faults=read_u16(f.payload.data()+47);return true;}
+std::string namespace_name(const std::string&n,const std::array<std::uint8_t,6>&m){std::string o;for(unsigned char c:n)if(std::isalnum(c))o+=static_cast<char>(std::tolower(c));else if((c=='-'||c=='_'||c==' ')&&!o.empty()&&o.back()!='_')o+='_';while(!o.empty()&&o.back()=='_')o.pop_back();if(o.empty())o="robot";o+="_";char b[5];std::snprintf(b,sizeof(b),"%02x%02x",m[4],m[5]);o+=b;return o;}
 }

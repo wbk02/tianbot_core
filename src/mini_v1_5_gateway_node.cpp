@@ -1,110 +1,51 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
+#include <string>
 #include <vector>
-
 #include <arpa/inet.h>
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/battery_state.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/u_int32.hpp>
 #include <sys/socket.h>
 #include <unistd.h>
-
 #include "tianbot_core/mini_v1_protocol.hpp"
-
-namespace mini = tianbot_core::mini_v1_5;
-
-class MiniGateway final : public rclcpp::Node {
- public:
-  MiniGateway() : Node("mini_v1_5_gateway") {
-    remote_ip_ = declare_parameter<std::string>("remote_ip", "192.168.4.1");
-    const auto command_port = declare_parameter<int>("command_port", 5000);
-    const auto telemetry_port = declare_parameter<int>("telemetry_port", 5001);
-    const auto lidar_port = declare_parameter<int>("lidar_port", 5002);
-    management_port_ = declare_parameter<int>("management_port", 5003);
-    session_id_ = static_cast<uint32_t>(declare_parameter<int>("session_id", 0));
-    socket_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket_ < 0) throw std::runtime_error("cannot create Mini UDP socket");
-    std::memset(&remote_, 0, sizeof(remote_)); remote_.sin_family = AF_INET;
-    remote_.sin_port = htons(static_cast<uint16_t>(command_port));
-    if (inet_pton(AF_INET, remote_ip_.c_str(), &remote_.sin_addr) != 1) throw std::runtime_error("invalid remote_ip");
-    sockaddr_in local{}; local.sin_family = AF_INET; local.sin_port = htons(static_cast<uint16_t>(telemetry_port)); local.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (::bind(socket_, reinterpret_cast<sockaddr *>(&local), sizeof(local)) != 0) throw std::runtime_error("cannot bind Mini telemetry socket");
-    lidar_socket_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (lidar_socket_ < 0) throw std::runtime_error("cannot create Mini lidar UDP socket");
-    local.sin_port = htons(static_cast<uint16_t>(lidar_port));
-    if (::bind(lidar_socket_, reinterpret_cast<sockaddr *>(&local), sizeof(local)) != 0)
-      throw std::runtime_error("cannot bind Mini lidar socket");
-    management_ = remote_; management_.sin_port = htons(static_cast<uint16_t>(management_port_));
-    odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("odom", 10);
-    imu_pub_ = create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
-    scan_pub_ = create_publisher<sensor_msgs::msg::LaserScan>("scan", 10);
-    cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>("cmd_vel", 10, [this](const geometry_msgs::msg::Twist::SharedPtr msg) { send_velocity(*msg); });
-    rx_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this] { receive(); });
-    discovery_timer_ = create_wall_timer(std::chrono::seconds(1), [this] { discover_or_confirm(); });
-  }
-  ~MiniGateway() override { if (socket_ >= 0) ::close(socket_); if (lidar_socket_ >= 0) ::close(lidar_socket_); }
+namespace mini=tianbot_core::mini_v1_5;
+namespace { template<class T> T load(const uint8_t*p){T v{};std::memcpy(&v,p,sizeof(v));return v;} bool parse_mac(const std::string&s,std::array<uint8_t,6>*m){unsigned v[6]{};if(!m||s.empty()||std::sscanf(s.c_str(),"%2x:%2x:%2x:%2x:%2x:%2x",v,v+1,v+2,v+3,v+4,v+5)!=6)return false;for(size_t i=0;i<6;i++)(*m)[i]=static_cast<uint8_t>(v[i]);return true;} }
+class MiniGateway final:public rclcpp::Node{
+ public: MiniGateway():Node("mini_v1_5_gateway"){
+  remote_ip_=declare_parameter<std::string>("remote_ip","192.168.4.1"); device_name_=declare_parameter<std::string>("device_name","");
+  auto mac=declare_parameter<std::string>("device_mac",""); mac_filter_valid_=parse_mac(mac,&mac_filter_);
+  command_port_=declare_parameter<int>("command_port",5000); management_port_=declare_parameter<int>("management_port",5003); bind_telemetry_port_=declare_parameter<int>("bind_telemetry_port",declare_parameter<int>("telemetry_port",5001)); bind_lidar_port_=declare_parameter<int>("bind_lidar_port",declare_parameter<int>("lidar_port",5002));
+  max_v_=declare_parameter<double>("max_linear_velocity",1.5); max_w_=declare_parameter<double>("max_angular_velocity",2.0); timeout_ms_=declare_parameter<int>("command_timeout_ms",500); base_frame_=declare_parameter<std::string>("base_frame","base_link"); lidar_frame_=declare_parameter<std::string>("lidar_frame","laser"); session_=static_cast<uint32_t>(declare_parameter<int>("session_id",0)); open();
+  odom_=create_publisher<nav_msgs::msg::Odometry>("odom",10); imu_=create_publisher<sensor_msgs::msg::Imu>("imu/data",10); scan_=create_publisher<sensor_msgs::msg::LaserScan>("scan",10); state_=create_publisher<std_msgs::msg::UInt32>("vehicle_state",10); battery_=create_publisher<sensor_msgs::msg::BatteryState>("battery_state",10); link_=create_publisher<std_msgs::msg::Bool>("spi_link",10);
+  cmd_=create_subscription<geometry_msgs::msg::Twist>("cmd_vel",10,[this](const geometry_msgs::msg::Twist::SharedPtr m){velocity(*m);}); rx_=create_wall_timer(std::chrono::milliseconds(10),[this]{receive();}); tick_=create_wall_timer(std::chrono::milliseconds(50),[this]{safety();}); discover_=create_wall_timer(std::chrono::milliseconds(500),[this]{session_tick();});
+ }
+ ~MiniGateway()override{stop(4);if(fd_>=0)close(fd_);if(lidar_fd_>=0)close(lidar_fd_);}
  private:
-  void send_velocity(const geometry_msgs::msg::Twist &cmd) {
-    if (session_id_ == 0U) { RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "session_id is zero; command rejected"); return; }
-    std::vector<uint8_t> payload(18U); mini::write_u32(payload.data(), session_id_); mini::write_u32(payload.data() + 4U, command_sequence_++);
-    const float vx = static_cast<float>(cmd.linear.x); const float wz = static_cast<float>(cmd.angular.z);
-    std::memcpy(payload.data() + 8U, &vx, sizeof(vx)); std::memcpy(payload.data() + 12U, &wz, sizeof(wz)); payload[16] = 0xf4U; payload[17] = 0x01U;
-    std::vector<uint8_t> packet; if (!mini::encode_frame(0x11U, 0U, frame_sequence_++, payload, &packet)) return;
-    (void)::sendto(socket_, packet.data(), packet.size(), 0, reinterpret_cast<sockaddr *>(&remote_), sizeof(remote_));
-  }
-  void send_management(uint8_t type, const std::vector<uint8_t> &payload) {
-    std::vector<uint8_t> packet;
-    if (mini::encode_frame(type, 0U, frame_sequence_++, payload, &packet))
-      (void)::sendto(socket_, packet.data(), packet.size(), 0, reinterpret_cast<sockaddr *>(&management_), sizeof(management_));
-  }
-  void discover_or_confirm() {
-    if (session_id_ != 0U) return;
-    if (discovered_) {
-      std::vector<uint8_t> payload(13U); std::memcpy(payload.data(), mac_.data(), mac_.size());
-      mini::write_u32(payload.data() + 6U, pending_session_); payload[10] = 0xf4U; payload[11] = 0x01U;
-      send_management(0x36U, payload);
-    } else {
-      std::vector<uint8_t> payload(4U); mini::write_u32(payload.data(), discovery_request_++);
-      send_management(0x30U, payload);
-    }
-  }
-  void receive() {
-    receive_from(socket_);
-    receive_from(lidar_socket_);
-  }
-  void receive_from(int fd) {
-    if (fd < 0) return;
-    std::array<uint8_t, 1216> packet{};
-    const auto bytes = ::recv(fd, packet.data(), packet.size(), MSG_DONTWAIT);
-    if (bytes <= 0) return;
-    mini::Frame frame{}; if (!mini::decode_frame(packet.data(), static_cast<size_t>(bytes), &frame)) return;
-    if (frame.type == 0x22U && frame.payload.size() == 28U) publish_odom(frame.payload);
-    if (frame.type == 0x21U && frame.payload.size() == 32U) publish_imu(frame.payload);
-    if (frame.type == 0x31U && frame.payload.size() == 45U) { std::memcpy(mac_.data(), frame.payload.data() + 4U, mac_.size()); discovered_ = true; request_session(); }
-    if (frame.type == 0x35U && frame.payload.size() == 13U && discovered_ && mini::read_u32(frame.payload.data() + 6U) != 0U) {
-      pending_session_ = mini::read_u32(frame.payload.data() + 6U); discover_or_confirm(); session_id_ = pending_session_; pending_session_ = 0U;
-    }
-    if (frame.type == 0x40U) publish_lidar_fragment(frame.payload);
-  }
-  void request_session() { std::vector<uint8_t> payload(13U); std::memcpy(payload.data(), mac_.data(), mac_.size()); payload[10] = 0xf4U; payload[11] = 0x01U; send_management(0x36U, payload); }
-  void publish_odom(const std::vector<uint8_t> &p) { nav_msgs::msg::Odometry msg; msg.header.stamp = now(); std::memcpy(&msg.pose.pose.position.x, p.data() + 8U, 4U); std::memcpy(&msg.pose.pose.position.y, p.data() + 12U, 4U); std::memcpy(&msg.twist.twist.linear.x, p.data() + 20U, 4U); std::memcpy(&msg.twist.twist.angular.z, p.data() + 24U, 4U); odom_pub_->publish(msg); }
-  void publish_imu(const std::vector<uint8_t> &p) { sensor_msgs::msg::Imu msg; msg.header.stamp = now(); std::memcpy(&msg.linear_acceleration.x, p.data() + 8U, 4U); std::memcpy(&msg.linear_acceleration.y, p.data() + 12U, 4U); std::memcpy(&msg.linear_acceleration.z, p.data() + 16U, 4U); std::memcpy(&msg.angular_velocity.x, p.data() + 20U, 4U); std::memcpy(&msg.angular_velocity.y, p.data() + 24U, 4U); std::memcpy(&msg.angular_velocity.z, p.data() + 28U, 4U); imu_pub_->publish(msg); }
-  void publish_lidar_fragment(const std::vector<uint8_t> &p) {
-    if (p.size() < 34U) return;
-    const uint32_t scan_id = mini::read_u32(p.data()); const uint16_t count = mini::read_u16(p.data() + 28U);
-    const uint16_t offset = mini::read_u16(p.data() + 30U), in_fragment = mini::read_u16(p.data() + 32U);
-    if (count == 0U || offset + in_fragment > count || p.size() != 34U + static_cast<size_t>(in_fragment) * 2U) return;
-    if (scan_id != scan_id_) { scan_id_ = scan_id; scan_ranges_.assign(count, NAN); std::memcpy(&angle_min_, p.data() + 12U, 4U); std::memcpy(&angle_increment_, p.data() + 16U, 4U); std::memcpy(&range_min_, p.data() + 20U, 4U); std::memcpy(&range_max_, p.data() + 24U, 4U); }
-    if (scan_ranges_.size() != count) return;
-    for (uint16_t i = 0; i < in_fragment; ++i) { const uint16_t mm = mini::read_u16(p.data() + 34U + i * 2U); scan_ranges_[offset + i] = mm == 0U ? NAN : static_cast<float>(mm) / 1000.0F; }
-    bool complete = true; for (const float range : scan_ranges_) if (std::isnan(range)) { complete = false; break; }
-    if (complete) { sensor_msgs::msg::LaserScan scan; scan.header.stamp = now(); scan.header.frame_id = "laser"; scan.angle_min = angle_min_; scan.angle_increment = angle_increment_; scan.angle_max = angle_min_ + angle_increment_ * static_cast<float>(count - 1U); scan.range_min = range_min_; scan.range_max = range_max_; scan.ranges = scan_ranges_; scan_pub_->publish(scan); scan_id_ = 0U; scan_ranges_.clear(); }
-  }
-  int socket_{-1}, lidar_socket_{-1}, management_port_{5003}; sockaddr_in remote_{}, management_{}; std::string remote_ip_; uint32_t session_id_{0}, pending_session_{0}, frame_sequence_{1}, command_sequence_{1}, discovery_request_{1}, scan_id_{0}; bool discovered_{false}; std::array<uint8_t, 6> mac_{}; std::vector<float> scan_ranges_; float angle_min_{}, angle_increment_{}, range_min_{}, range_max_{};
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_; rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_; rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_pub_; rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_; rclcpp::TimerBase::SharedPtr rx_timer_, discovery_timer_;
-};
-int main(int argc, char **argv) { rclcpp::init(argc, argv); rclcpp::spin(std::make_shared<MiniGateway>()); rclcpp::shutdown(); return 0; }
+ void open(){fd_=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);lidar_fd_=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);if(fd_<0||lidar_fd_<0)throw std::runtime_error("cannot create UDP socket");remote_={};remote_.sin_family=AF_INET;remote_.sin_port=htons(command_port_);if(inet_pton(AF_INET,remote_ip_.c_str(),&remote_.sin_addr)!=1)throw std::runtime_error("invalid remote_ip");bind(fd_,bind_telemetry_port_);bind(lidar_fd_,bind_lidar_port_);management_=remote_;management_.sin_port=htons(management_port_);}
+ void bind(int f,int p){sockaddr_in a{};a.sin_family=AF_INET;a.sin_port=htons(static_cast<uint16_t>(p));a.sin_addr.s_addr=htonl(INADDR_ANY);if(::bind(f,reinterpret_cast<sockaddr*>(&a),sizeof(a))!=0)throw std::runtime_error("cannot bind UDP socket");}
+ void send(uint8_t type,const std::vector<uint8_t>&p,bool mgmt=false){std::vector<uint8_t>b;if(!mini::encode_frame(type,0,seq_++,p,&b))return;auto&a=mgmt?management_:remote_;sendto(fd_,b.data(),b.size(),0,reinterpret_cast<sockaddr*>(&a),sizeof(a));}
+ void velocity(const geometry_msgs::msg::Twist&m){if(!online_||!session_||!std::isfinite(m.linear.x)||!std::isfinite(m.angular.z))return;float v=static_cast<float>(std::clamp(m.linear.x,-max_v_,max_v_)),w=static_cast<float>(std::clamp(m.angular.z,-max_w_,max_w_));std::vector<uint8_t>p(18);mini::write_u32(p.data(),session_);mini::write_u32(p.data()+4,cmd_seq_++);std::memcpy(p.data()+8,&v,4);std::memcpy(p.data()+12,&w,4);mini::write_u16(p.data()+16,static_cast<uint16_t>(timeout_ms_));send(mini::kVelocity,p);last_cmd_=now();active_=true;}
+ void stop(uint8_t reason){if(!session_)return;std::vector<uint8_t>p(5);mini::write_u32(p.data(),session_);p[4]=reason;send(mini::kStop,p);active_=false;}
+ void session_tick(){if(!found_){std::vector<uint8_t>p(4);mini::write_u32(p.data(),request_++);pending_request_=mini::read_u32(p.data());send(mini::kDiscoverRequest,p,true);return;}if(session_)return;std::vector<uint8_t>p(13);std::copy(mac_.begin(),mac_.end(),p.begin());mini::write_u32(p.data()+6,pending_session_);mini::write_u16(p.data()+10,static_cast<uint16_t>(timeout_ms_));p[12]=0;send(mini::kSessionAck,p,true);if(pending_session_!=0){session_=pending_session_;pending_session_=0;} }
+ void safety(){auto age=last_cmd_.nanoseconds()==0?timeout_ms_+1:(now()-last_cmd_).nanoseconds()/1000000;if(active_&&age>timeout_ms_)stop(2);if(online_&&(now()-last_rx_).nanoseconds()>3000LL*1000000LL){online_=false;publish_link(false);stop(3);}}
+ void receive(){recv(fd_);recv(lidar_fd_);}
+ void recv(int f){std::array<uint8_t,1216>b{};auto n=recvfrom(f,b.data(),b.size(),MSG_DONTWAIT,nullptr,nullptr);if(n<=0)return;mini::Frame x{};if(!mini::decode_frame(b.data(),static_cast<size_t>(n),&x))return;if(x.type==mini::kDiscoverResponse){mini::DeviceInfo d{};if(!mini::parse_discovery(x,&d)||mini::read_u32(x.payload.data())!=pending_request_||(!device_name_.empty()&&d.name!=device_name_)||(mac_filter_valid_&&d.mac!=mac_filter_))return;mac_=d.mac;found_=true;publish_state(d.state,d.faults,0,0);return;}if(x.type==mini::kSessionGrant&&x.payload.size()==13&&x.payload[12]==0){pending_session_=mini::read_u32(x.payload.data()+6);return;}if(x.type==mini::kHeartbeat&&x.payload.size()==10){online_=true;last_rx_=now();publish_link(true);publish_state(x.payload[6],mini::read_u16(x.payload.data()+7),0,x.payload[9]);return;}if(x.type==mini::kVehicleState&&x.payload.size()==6){online_=true;last_rx_=now();publish_link(true);publish_state(x.payload[0],mini::read_u16(x.payload.data()+1),mini::read_u16(x.payload.data()+3),x.payload[5]);return;}if(x.type==mini::kOdometry&&x.payload.size()==28){publish_odom(x.payload);return;}if(x.type==mini::kImu&&x.payload.size()==32){publish_imu(x.payload);return;}if(x.type==mini::kLidarFragment)lidar(x.payload);}
+ void publish_link(bool v){std_msgs::msg::Bool m;m.data=v;link_->publish(m);}void publish_state(uint8_t s,uint16_t f,uint16_t mv,uint8_t src){std_msgs::msg::UInt32 m;m.data=s|(uint32_t(f)<<8)|(uint32_t(src)<<24);state_->publish(m);sensor_msgs::msg::BatteryState b;b.header.stamp=now();b.header.frame_id=base_frame_;b.voltage=float(mv)/1000.f;b.percentage=std::numeric_limits<float>::quiet_NaN();battery_->publish(b);}
+ void publish_odom(const std::vector<uint8_t>&p){nav_msgs::msg::Odometry m;m.header.stamp=now();m.header.frame_id="odom";m.child_frame_id=base_frame_;float yaw=load<float>(p.data()+16);m.pose.pose.position.x=load<float>(p.data()+8);m.pose.pose.position.y=load<float>(p.data()+12);m.pose.pose.orientation.z=sin(yaw/2);m.pose.pose.orientation.w=cos(yaw/2);m.twist.twist.linear.x=load<float>(p.data()+20);m.twist.twist.angular.z=load<float>(p.data()+24);odom_->publish(m);}
+ void publish_imu(const std::vector<uint8_t>&p){sensor_msgs::msg::Imu m;m.header.stamp=now();m.header.frame_id=base_frame_;m.linear_acceleration.x=load<float>(p.data()+8);m.linear_acceleration.y=load<float>(p.data()+12);m.linear_acceleration.z=load<float>(p.data()+16);m.angular_velocity.x=load<float>(p.data()+20);m.angular_velocity.y=load<float>(p.data()+24);m.angular_velocity.z=load<float>(p.data()+28);imu_->publish(m);}
+ void lidar(const std::vector<uint8_t>&p){if(p.size()<12)return;auto id=mini::read_u32(p.data());auto idx=mini::read_u16(p.data()+4);auto cnt=mini::read_u16(p.data()+6);auto start=mini::read_u16(p.data()+8);auto bins=p[10];if(!cnt||idx>=cnt||!bins||start+bins>90||p.size()!=12+size_t(bins)*2)return;if(id!=scan_id_||cnt!=frag_count_){scan_id_=id;frag_count_=cnt;seen_=0;ranges_.assign(90,NAN);got_.assign(cnt,false);scan_started_=now();}if(got_[idx])return;got_[idx]=true;seen_++;for(uint16_t i=0;i<bins;i++){auto mm=mini::read_u16(p.data()+12+2*i);ranges_[start+i]=mm?float(mm)/1000.f:NAN;}if(seen_!=frag_count_){if((now()-scan_started_).nanoseconds()>200000000){ranges_.clear();got_.clear();seen_=0;}return;}sensor_msgs::msg::LaserScan m;m.header.stamp=now();m.header.frame_id=lidar_frame_;m.angle_min=0;m.angle_increment=float(4*M_PI/180);m.angle_max=m.angle_increment*89;m.range_min=.02;m.range_max=12;m.ranges=ranges_;scan_->publish(m);ranges_.clear();got_.clear();seen_=0;}
+ int fd_{-1},lidar_fd_{-1},command_port_{5000},management_port_{5003},bind_telemetry_port_{5001},bind_lidar_port_{5002};sockaddr_in remote_{},management_{};std::string remote_ip_,device_name_,base_frame_,lidar_frame_;double max_v_{1.5},max_w_{2};int timeout_ms_{500};uint32_t session_{0},pending_session_{0},seq_{1},cmd_seq_{1},request_{1},pending_request_{0},scan_id_{0};bool found_{false},online_{false},active_{false},mac_filter_valid_{false};std::array<uint8_t,6>mac_{},mac_filter_{};uint16_t frag_count_{0},seen_{0};std::vector<bool>got_;std::vector<float>ranges_;rclcpp::Time last_cmd_{0,0,RCL_ROS_TIME},last_rx_{0,0,RCL_ROS_TIME},scan_started_{0,0,RCL_ROS_TIME};rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_;rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_;rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_;rclcpp::Publisher<std_msgs::msg::UInt32>::SharedPtr state_;rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_;rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr link_;rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_;rclcpp::TimerBase::SharedPtr rx_,tick_,discover_;
+};int main(int argc,char**argv){rclcpp::init(argc,argv);try{rclcpp::spin(std::make_shared<MiniGateway>());}catch(const std::exception&e){std::fprintf(stderr,"%s\n",e.what());}rclcpp::shutdown();return 0;}

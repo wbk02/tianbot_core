@@ -123,7 +123,7 @@ target_link_libraries(tianbot_core
 )
 
 ament_target_dependencies(tianbot_core ${dependencies})
-ament_target_dependencies(mini_v1_5_gateway rclcpp geometry_msgs nav_msgs sensor_msgs)
+ament_target_dependencies(mini_v1_5_gateway rclcpp geometry_msgs nav_msgs sensor_msgs std_msgs)
 target_include_directories(mini_v1_5_gateway PRIVATE include)
 
 # Install
