@@ -292,7 +292,7 @@ private:
              cnt = mini::read_u16(p.data() + 6),
              start = mini::read_u16(p.data() + 8);
     uint8_t bins = p[10];
-    if (!cnt || idx >= cnt || !bins || start + bins > 90 ||
+    if (!cnt || idx >= cnt || !bins || p[11] != 0 || start + bins > 90 ||
         p.size() != 12 + bins * 2)
       return;
     if (id != scan_id_ || cnt != frag_count_) {

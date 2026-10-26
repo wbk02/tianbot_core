@@ -3,20 +3,29 @@
   <arg name="remote_ip" default="192.168.4.1"/>
   <arg name="device_name" default=""/>
   <arg name="device_mac" default=""/>
+  <arg name="command_port" default="5000"/>
+  <arg name="management_port" default="5003"/>
   <arg name="bind_telemetry_port" default="5001"/>
   <arg name="bind_lidar_port" default="5002"/>
   <arg name="max_linear_velocity" default="1.5"/>
   <arg name="max_angular_velocity" default="2.0"/>
   <arg name="command_timeout_ms" default="500"/>
+  <arg name="base_frame" default="base_link"/>
+  <arg name="lidar_frame" default="laser"/>
+  <arg name="session_id" default="0"/>
   <node pkg="tianbot_core" type="mini_v1_5_gateway" name="mini_v1_5_gateway" ns="$(arg namespace)" output="screen">
     <param name="remote_ip" value="$(arg remote_ip)"/>
     <param name="device_name" value="$(arg device_name)"/>
     <param name="device_mac" value="$(arg device_mac)"/>
+    <param name="command_port" value="$(arg command_port)"/>
+    <param name="management_port" value="$(arg management_port)"/>
     <param name="bind_telemetry_port" value="$(arg bind_telemetry_port)"/>
     <param name="bind_lidar_port" value="$(arg bind_lidar_port)"/>
     <param name="max_linear_velocity" value="$(arg max_linear_velocity)"/>
     <param name="max_angular_velocity" value="$(arg max_angular_velocity)"/>
     <param name="command_timeout_ms" value="$(arg command_timeout_ms)"/>
-    <param name="session_id" value="0"/>
+    <param name="base_frame" value="$(arg base_frame)"/>
+    <param name="lidar_frame" value="$(arg lidar_frame)"/>
+    <param name="session_id" value="$(arg session_id)"/>
   </node>
 </launch>
