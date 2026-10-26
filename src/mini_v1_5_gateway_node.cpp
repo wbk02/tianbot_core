@@ -45,7 +45,9 @@ public:
     remote_ip_ = declare_parameter<std::string>("remote_ip", "192.168.4.1");
     device_name_ = declare_parameter<std::string>("device_name", "");
     auto mac = declare_parameter<std::string>("device_mac", "");
-    mac_filter_valid_ = parse_mac(mac, &mac_filter_);
+    if (!mac.empty() && !parse_mac(mac, &mac_filter_))
+      throw std::invalid_argument("device_mac must be aa:bb:cc:dd:ee:ff");
+    mac_filter_valid_ = !mac.empty();
     command_port_ = declare_parameter<int>("command_port", 5000);
     management_port_ = declare_parameter<int>("management_port", 5003);
     bind_telemetry_port_ = declare_parameter<int>(
@@ -58,6 +60,12 @@ public:
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     lidar_frame_ = declare_parameter<std::string>("lidar_frame", "laser");
     session_ = static_cast<uint32_t>(declare_parameter<int>("session_id", 0));
+    if (command_port_ < 1 || command_port_ > 65535 || management_port_ < 1 ||
+        management_port_ > 65535 || bind_telemetry_port_ < 1 ||
+        bind_telemetry_port_ > 65535 || bind_lidar_port_ < 1 ||
+        bind_lidar_port_ > 65535 || timeout_ms_ <= 0 || timeout_ms_ > 65535 ||
+        max_v_ < 0.0 || max_w_ < 0.0)
+      throw std::invalid_argument("invalid gateway parameter range");
     open();
     odom_ = create_publisher<nav_msgs::msg::Odometry>("odom", 10);
     imu_ = create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
@@ -88,15 +96,25 @@ private:
   void open() {
     fd_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     lidar_fd_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (fd_ < 0 || lidar_fd_ < 0)
+    if (fd_ < 0 || lidar_fd_ < 0) {
+      if (fd_ >= 0) close(fd_);
+      if (lidar_fd_ >= 0) close(lidar_fd_);
       throw std::runtime_error("cannot create UDP socket");
+    }
     remote_ = {};
     remote_.sin_family = AF_INET;
     remote_.sin_port = htons(command_port_);
     if (inet_pton(AF_INET, remote_ip_.c_str(), &remote_.sin_addr) != 1)
       throw std::runtime_error("invalid remote_ip");
-    bind(fd_, bind_telemetry_port_);
-    bind(lidar_fd_, bind_lidar_port_);
+    try {
+      bind(fd_, bind_telemetry_port_);
+      bind(lidar_fd_, bind_lidar_port_);
+    } catch (...) {
+      close(fd_);
+      close(lidar_fd_);
+      fd_ = lidar_fd_ = -1;
+      throw;
+    }
     management_ = remote_;
     management_.sin_port = htons(management_port_);
   }
@@ -180,8 +198,13 @@ private:
   }
   void recv(int f) {
     std::array<uint8_t, 1216> b{};
-    auto n = recvfrom(f, b.data(), b.size(), MSG_DONTWAIT, nullptr, nullptr);
+    sockaddr_in source{};
+    socklen_t source_len = sizeof(source);
+    auto n = recvfrom(f, b.data(), b.size(), MSG_DONTWAIT,
+                      reinterpret_cast<sockaddr *>(&source), &source_len);
     if (n <= 0)
+      return;
+    if (source.sin_addr.s_addr != remote_.sin_addr.s_addr)
       return;
     mini::Frame x{};
     if (!mini::decode_frame(b.data(), static_cast<size_t>(n), &x))
