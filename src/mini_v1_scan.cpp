@@ -72,7 +72,7 @@ bool send_discovery(int fd, std::uint32_t request) {
 
 void print_device(const DeviceRecord &record) {
   const auto &device = record.info;
-  std::printf("设备: %-16s IP: %-15s MAC: %-17s 固件: %u 状态: %u 故障: 0x%04X\n",
+  std::printf("Device: %-16s IP: %-15s MAC: %-17s Firmware: %u State: %u Faults: 0x%04X\n",
               device.name.c_str(), record.ip.c_str(),
               mac_text(device.mac).c_str(), device.firmware_version,
               static_cast<unsigned>(device.state), device.faults);
@@ -81,7 +81,7 @@ void print_device(const DeviceRecord &record) {
 int open_socket() {
   const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
-    std::perror("创建 UDP socket 失败");
+    std::perror("Failed to create UDP socket");
     return -1;
   }
   int enabled = 1;
@@ -94,7 +94,7 @@ int open_socket() {
   local.sin_port = htons(kManagementPort);
   local.sin_addr.s_addr = htonl(INADDR_ANY);
   if (::bind(fd, reinterpret_cast<sockaddr *>(&local), sizeof(local)) != 0) {
-    std::fprintf(stderr, "绑定 UDP 端口 %u 失败，请先退出其他扫描/多车程序\n",
+    std::fprintf(stderr, "Failed to bind UDP port %u. Stop other scan or driver processes first.\n",
                  kManagementPort);
     ::close(fd);
     return -1;
@@ -102,10 +102,11 @@ int open_socket() {
   return fd;
 }
 
-void print_summary(const std::map<std::string, DeviceRecord> &devices) {
-  std::printf("\n设备扫描结束，共发现 %zu 台设备。\n", devices.size());
+void print_summary(const std::map<std::string, DeviceRecord> &devices,
+                   double duration_seconds) {
+  std::printf("\nScan complete. Found %zu device(s).\n", devices.size());
   if (!devices.empty()) {
-    std::printf("启动全部设备：ros2 launch tianbot_core mini_v1_5_multi.launch.py vehicle_ips:=");
+    std::printf("Launch command: ros2 launch tianbot_core mini_v1_5_multi.launch.py vehicle_ips:=");
     bool first = true;
     for (const auto &entry : devices) {
       if (!first) std::printf(",");
@@ -114,7 +115,7 @@ void print_summary(const std::map<std::string, DeviceRecord> &devices) {
     }
     std::printf("\n");
   }
-  std::printf("设备扫描已退出。\n");
+  std::printf("Scan duration: %.2f s\n", duration_seconds);
 }
 } // namespace
 
@@ -131,10 +132,7 @@ int main() {
   std::deque<std::uint32_t> recent_requests;
   std::map<std::string, DeviceRecord> devices;
 
-  std::printf("Mini V1.5 设备扫描开始\n");
-  std::printf("管理端口: %u；至少扫描 2 秒，无新增设备 1.5 秒后结束，最长 10 秒\n",
-              kManagementPort);
-  std::printf("正在广播发现请求到 255.255.255.255:%u ...\n", kManagementPort);
+  std::printf("Mini V1.5 device scan started.\n");
   std::fflush(stdout);
 
   while (g_running) {
@@ -149,7 +147,7 @@ int main() {
       if (recent_requests.size() >= kRecentRequestLimit)
         recent_requests.pop_front();
       recent_requests.push_back(request);
-      if (!send_discovery(fd, request)) std::perror("发送发现请求失败");
+      if (!send_discovery(fd, request)) std::perror("Failed to send discovery request");
       next_broadcast = now + kBroadcastPeriod;
     }
 
@@ -174,7 +172,8 @@ int main() {
       last_new_device = Clock::now();
     }
   }
-  print_summary(devices);
+  const auto scan_duration = std::chrono::duration<double>(Clock::now() - scan_start);
+  print_summary(devices, scan_duration.count());
   ::close(fd);
   return 0;
 }
