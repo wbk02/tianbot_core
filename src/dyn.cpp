@@ -117,7 +117,10 @@ TianbotDyn::TianbotDyn(const std::shared_ptr<rclcpp::Node> &node)
         "set_control_mode", std::bind(&TianbotDyn::setControlModeCallback, this, std::placeholders::_1, std::placeholders::_2));
 
     initDone_ = true;
+}
 
+void TianbotDyn::onOpened()
+{
     std::string result;
     if (sendDebugCommand("param get", 500, &result))
     {

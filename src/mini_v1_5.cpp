@@ -17,8 +17,8 @@ namespace mini = tianbot_core::mini_v1_5;
 
 namespace {
 const char *kRed = "\033[31m";
-const char *kGreen = "\033[32m";
-const char *kCyan = "\033[36m";
+const char *kGreen = "";
+const char *kCyan = "";
 const char *kReset = "\033[0m";
 template <class T> T loadValue(const uint8_t *p) {
   T v{};
@@ -406,7 +406,8 @@ void TianbotMiniV15::receiveFrom(int fd) {
                   loadValue<float>(x.payload.data() + 24));
       continue;
     }
-    if (x.type == mini::kImu && x.payload.size() == 32) {
+    if (x.type == mini::kImu &&
+        (x.payload.size() == 32 || x.payload.size() == 48)) {
       online_ = true;
       last_rx_ = this->node->now();
       geometry_msgs::msg::Quaternion orientation;
@@ -415,7 +416,16 @@ void TianbotMiniV15::receiveFrom(int fd) {
       orientation.z = loadValue<float>(x.payload.data() + 16);
       orientation.w = loadValue<float>(x.payload.data() + 20);
       const double nan = std::numeric_limits<double>::quiet_NaN();
-      publishImu(nan, nan, nan, nan, nan, nan, &orientation);
+      if (x.payload.size() == 48) {
+        publishImu(loadValue<float>(x.payload.data() + 36),
+                   loadValue<float>(x.payload.data() + 40),
+                   loadValue<float>(x.payload.data() + 44),
+                   loadValue<float>(x.payload.data() + 24),
+                   loadValue<float>(x.payload.data() + 28),
+                   loadValue<float>(x.payload.data() + 32), &orientation);
+      } else {
+        publishImu(nan, nan, nan, nan, nan, nan, &orientation);
+      }
       continue;
     }
     if (x.type == mini::kLidarRaw)

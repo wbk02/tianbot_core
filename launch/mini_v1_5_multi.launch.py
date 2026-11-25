@@ -4,6 +4,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     args = [
@@ -17,5 +18,13 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(k, default_value=v) for k,v in args
     ] + [Node(package='tianbot_core', executable='tianbot_core', name='tianbot_core_multi', output='screen', emulate_tty=True,
-            additional_env={'RCUTILS_COLORIZED_OUTPUT': '1' if sys.stdout.isatty() and 'NO_COLOR' not in os.environ else '0'},
-        parameters=[{'type':'mini_v1_5_multi', **{k: LaunchConfiguration(k) for k,_ in args}}])])
+            additional_env={
+                'RCUTILS_COLORIZED_OUTPUT': '1' if sys.stdout.isatty() and 'NO_COLOR' not in os.environ else '0',
+                'RCUTILS_CONSOLE_OUTPUT_FORMAT': '[{severity}] [{name}] {message}',
+            },
+        parameters=[{'type': 'mini_v1_5_multi', **{
+            k: ParameterValue(LaunchConfiguration(k), value_type=str)
+            if k in {'vehicle_ips', 'discovery_address', 'base_frame',
+                     'odom_frame', 'imu_frame', 'lidar_frame'}
+            else LaunchConfiguration(k)
+            for k, _ in args}}])])

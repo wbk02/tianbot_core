@@ -28,6 +28,7 @@ enum Message : std::uint8_t {
   kSessionAck = 0x36,
   kSessionRelease = 0x37,
   kLidarFragment = 0x40,
+  kLidarRaw = 0x43,
   kConfigGet = 0x50,
   kConfigSet = 0x51,
   kOtaBegin = 0x60,

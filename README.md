@@ -15,12 +15,9 @@ git clone https://github.com/tianbot/tianbot_core.git -b ros2
 cd tianbot_core && ./build.sh
 ```
 
-## Usage
+## Mini V1.5 使用
 
-```bash
-source ~/ros2_ws/install/setup.bash
-ros2 launch tianbot_core tianbot_core.launch.py
-```
+当前 Mini V1.5 的扫描、启动、话题、控制和验证流程见 [`docs/MINI_V1_5_HOST.md`](docs/MINI_V1_5_HOST.md)。
 
 ## Param Set
 
@@ -152,3 +149,17 @@ The `ros2` branch supports `type:=amp` and `type:=ndi` in addition to the generi
 ├── param/
 └── scripts/
 ```
+
+## Mini V1.5 当前验证
+
+构建前使用 ROS2 Humble 的 Python 3.8 环境：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/.ros2/bin/activate
+source ~/ros2_study_ws/install/setup.bash --extend
+unset IDF_PATH IDF_PYTHON_ENV_PATH IDF_TOOLS_PATH IDF_DEACTIVATE_FILE_PATH
+colcon build --packages-select tianbot_core --cmake-args -DCMAKE_BUILD_TYPE=Release -DPython3_EXECUTABLE=/home/tianbot/.ros2/bin/python3
+```
+
+扫描、启动和话题验证记录以两个固件工程的 `docs/test/regression_2026-11-06.md` 为准。`build/`、`install/`、`log/` 只属于本地生成物，不提交。

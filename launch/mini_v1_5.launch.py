@@ -31,7 +31,10 @@ def generate_launch_description():
             executable='tianbot_core',
             name='tianbot_core',
             output='screen', emulate_tty=True,
-            additional_env={'RCUTILS_COLORIZED_OUTPUT': '1' if sys.stdout.isatty() and 'NO_COLOR' not in os.environ else '0'},
+            additional_env={
+                'RCUTILS_COLORIZED_OUTPUT': '1' if sys.stdout.isatty() and 'NO_COLOR' not in os.environ else '0',
+                'RCUTILS_CONSOLE_OUTPUT_FORMAT': '[{severity}] [{name}] {message}',
+            },
             namespace=LaunchConfiguration('namespace'),
             parameters=[{
                 'type': 'mini_v1_5',

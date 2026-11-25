@@ -28,6 +28,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -48,6 +49,7 @@ set(dependencies
     nav_msgs
     tf2_geometry_msgs
     sensor_msgs
+    builtin_interfaces
 )
 
 ### service files
@@ -65,6 +67,8 @@ set(msg_files
     "msg/DmMotorFeedback.msg"
     "msg/DmMotorFeedbackArray.msg"
     "msg/RoverMotionModeStatus.msg"
+    "msg/MiniDevice.msg"
+    "msg/MiniDiscovery.msg"
 )
 
 rosidl_generate_interfaces(debug_cmd
@@ -91,11 +95,18 @@ add_executable(tianbot_core
     src/protocol.cpp
     src/mini_v1_protocol.cpp
     src/mini_v1_gateway.cpp
+    src/mini_v1_5.cpp
+    src/mini_v1_5_multi.cpp
 )
 
-add_executable(mini_v1_5_gateway
-    src/mini_v1_5_gateway_node.cpp
+add_executable(mini_v1_5_scan
+    src/mini_v1_scan.cpp
     src/mini_v1_protocol.cpp
+)
+target_include_directories(mini_v1_5_scan PUBLIC
+    include
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/tianbot_core>"
+    "$<INSTALL_INTERFACE:include>"
 )
 
 # get include directories of custom msg headers
@@ -123,15 +134,16 @@ target_link_libraries(tianbot_core
 )
 
 ament_target_dependencies(tianbot_core ${dependencies})
-ament_target_dependencies(mini_v1_5_gateway rclcpp geometry_msgs nav_msgs sensor_msgs std_msgs)
-target_include_directories(mini_v1_5_gateway PRIVATE include)
 
 # Install
-install(TARGETS tianbot_core mini_v1_5_gateway
+install(TARGETS tianbot_core
+    DESTINATION lib/${PROJECT_NAME}
+)
+install(TARGETS mini_v1_5_scan
     DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch param scripts
+install(DIRECTORY launch param scripts docs rviz
     DESTINATION share/${PROJECT_NAME}/
 )
 

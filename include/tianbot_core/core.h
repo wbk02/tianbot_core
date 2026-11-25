@@ -30,7 +30,7 @@ using namespace boost;
 class TianbotCore
 {
 public:
-    CommInterface *comm_inf_;
+    CommInterface *comm_inf_ = nullptr;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr debug_result_pub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr debug_cmd_sub_;
     rclcpp::Service<tianbot_core::srv::DebugCmd>::SharedPtr debug_cmd_srv_;
@@ -42,7 +42,7 @@ public:
     TianbotCore(const std::shared_ptr<rclcpp::Node> &nh);
     void checkDevType(void);
     virtual void tianbotDataProc(unsigned char *buf, int len) = 0;
-    void open(void);
+    virtual void open(void);
     virtual ~TianbotCore() {};
 
 protected:
@@ -54,6 +54,9 @@ protected:
     std::condition_variable debug_result_cv_;
 
     bool sendDebugCommandAndWait(const std::string &cmd, uint32_t timeout_ms, std::string *result = nullptr);
+    // Called at the end of open(), after the transport is ready. Subclasses may
+    // override this to perform queries that require a live connection.
+    virtual void onOpened();
 
 private:
 

@@ -12,11 +12,13 @@
 
 namespace mini = tianbot_core::mini_v1_5;
 namespace {
+/* 错误结束后恢复终端默认颜色，避免后续普通日志被染红。 */
 constexpr const char *kReset = "\033[0m";
 constexpr const char *kRed = "\033[31m";
-constexpr const char *kYellow = "\033[33m";
-constexpr const char *kGreen = "\033[32m";
-constexpr const char *kCyan = "\033[36m";
+constexpr const char *kYellow = "";
+constexpr const char *kGreen = "";
+/* 所有普通状态使用终端默认白色，仅错误保留红色。 */
+constexpr const char *kCyan = "";
 bool g_use_color = false;
 const char *color(const char *value) { return g_use_color ? value : ""; }
 std::string macKey(const std::array<uint8_t, 6> &m) {
@@ -362,7 +364,8 @@ void TianbotMiniV15Multi::handle(Vehicle &v, const mini::Frame &x, bool) {
   const bool telemetry =
       (x.type == mini::kVehicleState && x.payload.size() == 6) ||
       (x.type == mini::kOdometry && x.payload.size() == 28) ||
-      (x.type == mini::kImu && x.payload.size() == 32);
+      (x.type == mini::kImu &&
+       (x.payload.size() == 32 || x.payload.size() == 48));
   if (heartbeat || telemetry) {
     v.last_rx = now;
     if (!v.online) {
@@ -410,7 +413,8 @@ void TianbotMiniV15Multi::handle(Vehicle &v, const mini::Frame &x, bool) {
     tf_broadcaster_->sendTransform(tf);
     return;
   }
-  if (x.type == mini::kImu && x.payload.size() == 32) {
+  if (x.type == mini::kImu &&
+      (x.payload.size() == 32 || x.payload.size() == 48)) {
     sensor_msgs::msg::Imu i;
     i.header.stamp = node->now();
     i.header.frame_id = v.ns + "/" + frame_imu_;
@@ -418,17 +422,37 @@ void TianbotMiniV15Multi::handle(Vehicle &v, const mini::Frame &x, bool) {
     i.orientation.y = load<float>(x.payload.data() + 12);
     i.orientation.z = load<float>(x.payload.data() + 16);
     i.orientation.w = load<float>(x.payload.data() + 20);
+    // 当前数据来自已校准的板载 IMU；给出保守的固定方差，避免全零被
+    // 消费者误解为“绝对无噪声”。具体标定参数可后续按实测替换。
+    i.orientation_covariance[0] = 1e-3;
+    i.orientation_covariance[4] = 1e-3;
+    i.orientation_covariance[8] = 1e-3;
     geometry_msgs::msg::TransformStamped atf;
     atf.header = i.header;
     atf.header.frame_id = v.ns + "/" + frame_odom_;
     atf.child_frame_id = v.ns + "/imu_attitude";
     atf.transform.rotation = i.orientation;
     tf_broadcaster_->sendTransform(atf);
-    i.angular_velocity.x = i.angular_velocity.y = i.angular_velocity.z = 0.0;
-    i.angular_velocity_covariance[0] = -1.0;
-    i.linear_acceleration.x = i.linear_acceleration.y =
-        i.linear_acceleration.z = 0.0;
-    i.linear_acceleration_covariance[0] = -1.0;
+    if (x.payload.size() == 48) {
+      i.linear_acceleration.x = load<float>(x.payload.data() + 24);
+      i.linear_acceleration.y = load<float>(x.payload.data() + 28);
+      i.linear_acceleration.z = load<float>(x.payload.data() + 32);
+      i.angular_velocity.x = load<float>(x.payload.data() + 36);
+      i.angular_velocity.y = load<float>(x.payload.data() + 40);
+      i.angular_velocity.z = load<float>(x.payload.data() + 44);
+      i.linear_acceleration_covariance[0] = 4e-4;
+      i.linear_acceleration_covariance[4] = 4e-4;
+      i.linear_acceleration_covariance[8] = 4e-4;
+      i.angular_velocity_covariance[0] = 1e-5;
+      i.angular_velocity_covariance[4] = 1e-5;
+      i.angular_velocity_covariance[8] = 1e-5;
+    } else {
+      i.angular_velocity.x = i.angular_velocity.y = i.angular_velocity.z = 0.0;
+      i.angular_velocity_covariance[0] = -1.0;
+      i.linear_acceleration.x = i.linear_acceleration.y =
+          i.linear_acceleration.z = 0.0;
+      i.linear_acceleration_covariance[0] = -1.0;
+    }
     v.imu->publish(i);
     return;
   }

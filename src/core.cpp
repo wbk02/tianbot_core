@@ -25,6 +25,11 @@ uint32_t debugTimeoutForCommand(const std::string &cmd)
 
 bool TianbotCore::sendDebugCommandAndWait(const std::string &cmd, uint32_t timeout_ms, std::string *result)
 {
+    if (comm_inf_ == nullptr)
+    {
+        return false;
+    }
+
     std::lock_guard<std::mutex> debug_command_lock(debug_command_mutex_);
 
     {
@@ -204,6 +209,12 @@ void TianbotCore::communicationErrorCallback()
 
 void TianbotCore::heartCallback()
 {
+    if (comm_inf_ == nullptr)
+    {
+        heartbeat_timer_->reset();
+        return;
+    }
+
     std::vector<uint8_t> buf;
     uint16_t dummy = 0;
 
@@ -223,6 +234,11 @@ void TianbotCore::heartCallback()
 
 void TianbotCore::debugCmdCallback(const std_msgs::msg::String::ConstSharedPtr &msg)
 {
+    if (comm_inf_ == nullptr)
+    {
+        return;
+    }
+
     vector<uint8_t> buf;
     buildCmd(buf, PACK_TYPE_DEBUG, (uint8_t *)msg->data.c_str(), msg->data.length());
     if (comm_inf_->send(&buf[0], buf.size()) != 0)
@@ -368,18 +384,27 @@ void TianbotCore::open(void)
         }
         RCLCPP_ERROR(this->node->get_logger(), "Listen device %s:%d, server port %d ", client_ip.c_str(), u_cfg.udp_send_port, u_cfg.udp_recv_port);
     }
+
+    onOpened();
+}
+
+void TianbotCore::onOpened()
+{
 }
 
 TianbotCore::TianbotCore(const std::shared_ptr<rclcpp::Node> &nh)
     : node(nh), initDone_(false)
 {
-    open();
+    bool multi_vehicle_mode = false;
+    node->get_parameter("multi_vehicle_mode", multi_vehicle_mode);
+    if (!multi_vehicle_mode) {
     debug_result_pub_ = node->create_publisher<std_msgs::msg::String>("debug_result", 1);
     debug_cmd_sub_ = node->create_subscription<std_msgs::msg::String>(
         "debug_cmd", 1, std::bind(&TianbotCore::debugCmdCallback, this, std::placeholders::_1));
 
     param_set_ = node->create_service<tianbot_core::srv::DebugCmd>(
         "debug_cmd_srv", std::bind(&TianbotCore::debugCmdSrv, this, std::placeholders::_1, std::placeholders::_2));
+    }
 
     timer_callback_group_ = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     heartbeat_timer_ = node->create_wall_timer(

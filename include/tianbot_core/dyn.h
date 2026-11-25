@@ -21,6 +21,7 @@ public:
 
 protected:
     void onMotionModeStatus(const struct rover_motion_mode_status &status) override;
+    void onOpened() override;
 
 private:
     enum ControlMode : uint32_t

@@ -47,6 +47,20 @@ protected:
     virtual void onMotorFeedback(const struct dm_motor_feedback_array &feedback);
     virtual void onMotionModeStatus(const struct rover_motion_mode_status &status);
 
+    // Publish helpers. They keep the frame configuration, TF broadcast and
+    // publisher handles private to TianbotChasis while letting subclasses
+    // (e.g. non-protocol transports) publish through the same code path.
+    void publishOdom(double x, double y, double z,
+                     const geometry_msgs::msg::Quaternion &orientation,
+                     double vx, double vy, double vz,
+                     double wx, double wy, double wz);
+    void publishImu(double ax, double ay, double az,
+                    double gx, double gy, double gz,
+                    const geometry_msgs::msg::Quaternion *orientation = nullptr);
+    void publishVoltage(float voltage);
+
+    const std::string &baseFrame() const { return base_frame_; }
+
 private:
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Pose2D>::SharedPtr uwb_pub_;

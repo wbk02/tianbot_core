@@ -104,6 +104,67 @@ void TianbotChasis::onMotionModeStatus(const struct rover_motion_mode_status &)
 {
 }
 
+void TianbotChasis::publishOdom(double x, double y, double z,
+                                const geometry_msgs::msg::Quaternion &orientation,
+                                double vx, double vy, double vz,
+                                double wx, double wy, double wz)
+{
+    nav_msgs::msg::Odometry odom_msg;
+    rclcpp::Time current_time = clock_->now();
+    odom_msg.header.stamp = current_time;
+    odom_msg.header.frame_id = odom_frame_;
+    odom_msg.pose.pose.position.x = x;
+    odom_msg.pose.pose.position.y = y;
+    odom_msg.pose.pose.position.z = z;
+    odom_msg.pose.pose.orientation = orientation;
+    odom_msg.child_frame_id = base_frame_;
+    odom_msg.twist.twist.linear.x = vx;
+    odom_msg.twist.twist.linear.y = vy;
+    odom_msg.twist.twist.linear.z = vz;
+    odom_msg.twist.twist.angular.x = wx;
+    odom_msg.twist.twist.angular.y = wy;
+    odom_msg.twist.twist.angular.z = wz;
+    odom_pub_->publish(odom_msg);
+    if (publish_tf_)
+    {
+        odom_tf_.header.stamp = current_time;
+        odom_tf_.header.frame_id = odom_frame_;
+        odom_tf_.child_frame_id = base_frame_;
+        odom_tf_.transform.translation.x = x;
+        odom_tf_.transform.translation.y = y;
+        odom_tf_.transform.translation.z = z;
+        odom_tf_.transform.rotation = odom_msg.pose.pose.orientation;
+        tf_broadcaster_->sendTransform(odom_tf_);
+    }
+}
+
+void TianbotChasis::publishImu(double ax, double ay, double az,
+                               double gx, double gy, double gz,
+                               const geometry_msgs::msg::Quaternion *orientation)
+{
+    sensor_msgs::msg::Imu imu_msg;
+    imu_msg.header.stamp = clock_->now();
+    imu_msg.header.frame_id = imu_frame_;
+    if (orientation != nullptr)
+    {
+        imu_msg.orientation = *orientation;
+    }
+    imu_msg.angular_velocity.x = gx;
+    imu_msg.angular_velocity.y = gy;
+    imu_msg.angular_velocity.z = gz;
+    imu_msg.linear_acceleration.x = ax;
+    imu_msg.linear_acceleration.y = ay;
+    imu_msg.linear_acceleration.z = az;
+    imu_pub_->publish(imu_msg);
+}
+
+void TianbotChasis::publishVoltage(float voltage)
+{
+    std_msgs::msg::Float32 battery_msg;
+    battery_msg.data = voltage;
+    voltage_pub_->publish(battery_msg);
+}
+
 void TianbotChasis::tianbotDataProc(unsigned char *buf, int)
 {
     if (!publisher_init_done)
@@ -116,81 +177,22 @@ void TianbotChasis::tianbotDataProc(unsigned char *buf, int)
     case PACK_TYPE_ODOM_RESPONSE:
         if (sizeof(struct odom) == p->len - 2)
         {
-            nav_msgs::msg::Odometry odom_msg;
-            struct odom *pOdom = (struct odom *)(p->data);
-            rclcpp::Time current_time = clock_->now();
-            odom_msg.header.stamp = current_time;
-            // odom_msg.header.frame_id = (nh_.getNamespace() + "/" + odom_frame_).erase(0,1);
-            odom_msg.header.frame_id = odom_frame_;
-
-            odom_msg.pose.pose.position.x = pOdom->pose.point.x;
-            odom_msg.pose.pose.position.y = pOdom->pose.point.y;
-            odom_msg.pose.pose.position.z = pOdom->pose.point.z;
-            geometry_msgs::msg::Quaternion q = createQuaternionMsgFromYaw(pOdom->pose.yaw);          
-            odom_msg.pose.pose.orientation = q;
-            // set the velocity
-            odom_msg.child_frame_id = base_frame_;
-            odom_msg.twist.twist.linear.x = pOdom->twist.linear.x;
-            odom_msg.twist.twist.linear.y = pOdom->twist.linear.y;
-            odom_msg.twist.twist.linear.z = pOdom->twist.linear.z;
-            odom_msg.twist.twist.angular.x = pOdom->twist.angular.x;
-            odom_msg.twist.twist.angular.y = pOdom->twist.angular.y;
-            odom_msg.twist.twist.angular.z = pOdom->twist.angular.z;
-            // publish the message
-            odom_pub_->publish(odom_msg);
-            if (publish_tf_)
-            {
-                odom_tf_.header.stamp = current_time;
-                odom_tf_.header.frame_id = odom_frame_;
-                odom_tf_.child_frame_id = base_frame_;
-                odom_tf_.transform.translation.x = pOdom->pose.point.x;
-                odom_tf_.transform.translation.y = pOdom->pose.point.y;
-                odom_tf_.transform.translation.z = pOdom->pose.point.z;
-
-                odom_tf_.transform.rotation = odom_msg.pose.pose.orientation;
-                tf_broadcaster_->sendTransform(odom_tf_);
-            }
+            auto pOdom = reinterpret_cast<struct odom *>(p->data);
+            publishOdom(pOdom->pose.point.x, pOdom->pose.point.y, pOdom->pose.point.z,
+                        createQuaternionMsgFromYaw(pOdom->pose.yaw),
+                        pOdom->twist.linear.x, pOdom->twist.linear.y, pOdom->twist.linear.z,
+                        pOdom->twist.angular.x, pOdom->twist.angular.y, pOdom->twist.angular.z);
         }
         break;
 
     case PACK_TYPE_ODOM_V2_RESPONSE:
         if (sizeof(struct odom_v2) == p->len - 2)
         {
-            nav_msgs::msg::Odometry odom_msg;
-            struct odom_v2 *pOdom = (struct odom_v2 *)(p->data);
-            rclcpp::Time current_time = clock_->now();
-            odom_msg.header.stamp = current_time;
-            // odom_msg.header.frame_id = (nh_.getNamespace() + "/" + odom_frame_).erase(0,1);
-            odom_msg.header.frame_id = odom_frame_;
-
-            odom_msg.pose.pose.position.x = pOdom->pose.point.x;
-            odom_msg.pose.pose.position.y = pOdom->pose.point.y;
-            odom_msg.pose.pose.position.z = pOdom->pose.point.z;
-            //vector3 x->roll y->pitch z->yaw
-            geometry_msgs::msg::Quaternion q = createQuaternionMsgFromRollPitchYaw(pOdom->pose.rpy.x, pOdom->pose.rpy.y, pOdom->pose.rpy.z);    
-            odom_msg.pose.pose.orientation = q;
-            // set the velocity
-            odom_msg.child_frame_id = base_frame_;
-            odom_msg.twist.twist.linear.x = pOdom->twist.linear.x;
-            odom_msg.twist.twist.linear.y = pOdom->twist.linear.y;
-            odom_msg.twist.twist.linear.z = pOdom->twist.linear.z;
-            odom_msg.twist.twist.angular.x = pOdom->twist.angular.x;
-            odom_msg.twist.twist.angular.y = pOdom->twist.angular.y;
-            odom_msg.twist.twist.angular.z = pOdom->twist.angular.z;
-            // publish the message
-            odom_pub_->publish(odom_msg);
-            if (publish_tf_)
-            {
-                odom_tf_.header.stamp = current_time;
-                odom_tf_.header.frame_id = odom_frame_;
-                odom_tf_.child_frame_id = base_frame_;
-                odom_tf_.transform.translation.x = pOdom->pose.point.x;
-                odom_tf_.transform.translation.y = pOdom->pose.point.y;
-                odom_tf_.transform.translation.z = pOdom->pose.point.z;
-
-                odom_tf_.transform.rotation = odom_msg.pose.pose.orientation;
-                tf_broadcaster_->sendTransform(odom_tf_);
-            }
+            auto pOdom = reinterpret_cast<struct odom_v2 *>(p->data);
+            publishOdom(pOdom->pose.point.x, pOdom->pose.point.y, pOdom->pose.point.z,
+                        createQuaternionMsgFromRollPitchYaw(pOdom->pose.rpy.x, pOdom->pose.rpy.y, pOdom->pose.rpy.z),
+                        pOdom->twist.linear.x, pOdom->twist.linear.y, pOdom->twist.linear.z,
+                        pOdom->twist.angular.x, pOdom->twist.angular.y, pOdom->twist.angular.z);
         }
         break;
 
@@ -209,10 +211,8 @@ void TianbotChasis::tianbotDataProc(unsigned char *buf, int)
     case PACK_TYPE_Voltage_RESPONSE:
         if (sizeof(struct voltage) == p->len - 2)
         {
-            std_msgs::msg::Float32 battery_msg;
             auto voltage = reinterpret_cast<struct voltage *>(p->data);
-            battery_msg.data = voltage->Battery_voltage;
-            voltage_pub_->publish(battery_msg);
+            publishVoltage(voltage->Battery_voltage);
         }
         break;
 
@@ -398,23 +398,15 @@ void TianbotChasis::tianbotDataProc(unsigned char *buf, int)
     case PACK_TYPE_IMU_REPONSE:
         if (sizeof(struct imu_feedback) == p->len - 2)
         {
-            sensor_msgs::msg::Imu imu_msg;
             auto pImu = reinterpret_cast<struct imu_feedback *>(p->data);
-
-            imu_msg.header.stamp = clock_->now();
-            // imu_msg.header.frame_id = (nh_.getNamespace() + "/" + imu_frame_).erase(0,1);
-            imu_msg.header.frame_id = imu_frame_;
-            imu_msg.orientation.x = pImu->quat.x;
-            imu_msg.orientation.y = pImu->quat.y;
-            imu_msg.orientation.z = pImu->quat.z;
-            imu_msg.orientation.w = pImu->quat.w;
-            imu_msg.angular_velocity.x = pImu->angular_vel.x;
-            imu_msg.angular_velocity.y = pImu->angular_vel.y;
-            imu_msg.angular_velocity.z = pImu->angular_vel.z;
-            imu_msg.linear_acceleration.x = pImu->linear_acc.x;
-            imu_msg.linear_acceleration.y = pImu->linear_acc.y;
-            imu_msg.linear_acceleration.z = pImu->linear_acc.z;
-            imu_pub_->publish(imu_msg);
+            geometry_msgs::msg::Quaternion orientation;
+            orientation.x = pImu->quat.x;
+            orientation.y = pImu->quat.y;
+            orientation.z = pImu->quat.z;
+            orientation.w = pImu->quat.w;
+            publishImu(pImu->linear_acc.x, pImu->linear_acc.y, pImu->linear_acc.z,
+                       pImu->angular_vel.x, pImu->angular_vel.y, pImu->angular_vel.z,
+                       &orientation);
         }
         break;
 

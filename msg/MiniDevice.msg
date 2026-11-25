@@ -1,0 +1,10 @@
+uint8[6] mac
+string name
+string ip
+uint32 proto_version
+uint8 state
+uint16 faults
+bool selected
+bool online
+string ros_namespace
+builtin_interfaces/Time last_seen

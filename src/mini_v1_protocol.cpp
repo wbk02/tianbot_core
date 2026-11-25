@@ -74,23 +74,13 @@ bool parse_discovery(const Frame &f, DeviceInfo *i) {
   i->faults = read_u16(f.payload.data() + 47);
   return true;
 }
-std::string namespace_name(const std::string &n,
-                           const std::array<std::uint8_t, 6> &m) {
+std::string namespace_name(const std::string &n, const std::array<std::uint8_t, 6> &) {
   std::string o;
-  for (unsigned char c : n)
-    if (std::isalnum(c))
-      o += static_cast<char>(std::tolower(c));
-    else if ((c == '-' || c == '_' || c == ' ') && !o.empty() &&
-             o.back() != '_')
-      o += '_';
-  while (!o.empty() && o.back() == '_')
-    o.pop_back();
-  if (o.empty())
-    o = "robot";
-  o += "_";
-  char b[5];
-  std::snprintf(b, sizeof(b), "%02x%02x", m[4], m[5]);
-  o += b;
-  return o;
+  for (unsigned char c : n) {
+    if (std::isalnum(c) || c == '_') o += static_cast<char>(c);
+    else if (!o.empty() && o.back() != '_') o += '_';
+  }
+  while (!o.empty() && o.back() == '_') o.pop_back();
+  return o.empty() ? "robot" : o;
 }
 } // namespace tianbot_core::mini_v1_5

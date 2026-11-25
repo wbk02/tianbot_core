@@ -9,6 +9,8 @@
 #include "ndi.h"
 #include "omni.h"
 #include "rover.h"
+#include "mini_v1_5.h"
+#include "mini_v1_5_multi.h"
 #include "chassis.h"
 
 int main(int argc, char *argv[])
@@ -29,6 +31,7 @@ int main(int argc, char *argv[])
     node->declare_parameter("odom_frame", rclcpp::PARAMETER_STRING);
     node->declare_parameter("imu_frame", rclcpp::PARAMETER_STRING);
     node->declare_parameter("publish_tf",rclcpp::PARAMETER_BOOL);
+    node->declare_parameter("multi_vehicle_mode", false);
 
     if (!node->get_parameter("type", type)) {
         type = DEFAULT_TYPE;
@@ -67,14 +70,28 @@ int main(int argc, char *argv[])
     {
         core = new TianbotRover(node);
     }
+    else if (type == "mini_v1_5_multi")
+    {
+        core = new TianbotMiniV15Multi(node);
+        type_verify = false;
+    }
+    else if (type == "mini_v1_5")
+    {
+        core = new TianbotMiniV15(node);
+        type_verify = false;
+    }
     else if (type == "arm")
     {
         // Add arm initialization here
     }
 
-    if (type_verify)
+    if (core != nullptr)
     {
-        core->checkDevType();
+        core->open();
+        if (type_verify)
+        {
+            core->checkDevType();
+        }
     }
 
     // rclcpp::Rate loop_rate(10);
@@ -83,9 +100,14 @@ int main(int argc, char *argv[])
     //     rclcpp::spin_some(node);
     //     loop_rate.sleep();
     // }
-    rclcpp::executors::MultiThreadedExecutor executor;
-    executor.add_node(node);
-    executor.spin();
+    if (type == "mini_v1_5" || type == "mini_v1_5_multi") {
+        // 全部 Mini UDP 状态在单线程执行，减少执行器调度开销并保持会话状态串行访问。
+        rclcpp::executors::SingleThreadedExecutor executor;
+        executor.add_node(node); executor.spin();
+    } else {
+        rclcpp::executors::MultiThreadedExecutor executor;
+        executor.add_node(node); executor.spin();
+    }
     delete core;
     rclcpp::shutdown();
     return 0;
