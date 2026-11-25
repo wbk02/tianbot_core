@@ -2,21 +2,17 @@
 
 ## 环境和构建
 
-ROS2 Humble 使用系统 Python 3.8 和系统 NumPy。新终端执行：
+WSL Ubuntu 24.04 使用 ROS 2 Jazzy 和系统 Python 3.12。新终端执行：
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/.ros2/bin/activate
-source ~/ros2_study_ws/install/setup.bash --extend
-unset IDF_PATH IDF_PYTHON_ENV_PATH IDF_TOOLS_PATH IDF_DEACTIVATE_FILE_PATH
-cd /home/tianbot/Desktop/MIni_dev/tianbot-mini-v1.5/develop/tianbot_core
-colcon build --packages-select tianbot_core \
-  --cmake-args -DCMAKE_BUILD_TYPE=Release \
-  -DPython3_EXECUTABLE=/home/tianbot/.ros2/bin/python3
-source install/setup.bash
+dev ros2
+cd ~/projects/tianbot-mini-v1.5/develop/tianbot_core
+./build.sh
+source install-wsl/setup.bash
 ```
 
-`build/`、`install/`、`log/` 是本地生成目录，不提交 Git。若构建曾在 ESP-IDF Python 3.9 环境中执行，先移走旧构建目录再构建。
+构建脚本只扫描当前包，默认限制两个编译任务。生成目录为 `build-wsl/`、`install-wsl/`、`log-wsl/`。
+Humble 环境也可使用此脚本。ESP-IDF 终端请先退出，再执行 `dev ros2`。
 
 ## 扫描设备
 

@@ -109,18 +109,10 @@ target_include_directories(mini_v1_5_scan PUBLIC
     "$<INSTALL_INTERFACE:include>"
 )
 
-# get include directories of custom msg headers
-if(ENV{ROS_DISTRO} STREQUAL "humble")
-    rosidl_get_typesupport_target(cpp_typesupport_target
-        debug_cmd "rosidl_typesupport_cpp"
-    )
-    target_link_libraries(tianbot_core ${cpp_typesupport_target}
-    )
-else()
-    set(debug_cmd_target "debug_cmd__rosidl_typesupport_cpp")
-    add_dependencies(${PROJECT_NAME} debug_cmd)
-    get_target_property(debug_cmd_INCLUDE_DIRECTORIES ${debug_cmd_target} INTERFACE_INCLUDE_DIRECTORIES)
-endif()
+# Humble 及之后版本使用导出的消息 typesupport 目标。
+rosidl_get_typesupport_target(cpp_typesupport_target
+    debug_cmd "rosidl_typesupport_cpp"
+)
 
 target_include_directories(tianbot_core PUBLIC
     include
@@ -130,7 +122,7 @@ target_include_directories(tianbot_core PUBLIC
 
 target_link_libraries(tianbot_core
     pthread
-    ${debug_cmd_target}   # for custom msgs
+    ${cpp_typesupport_target}   # 自定义消息 typesupport
 )
 
 ament_target_dependencies(tianbot_core ${dependencies})

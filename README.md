@@ -4,7 +4,7 @@ ROS2 Package for the embedded controller of mobile robots.
 
 ## Dependencies
 
-- ROS2 Humble
+- ROS 2 Humble 或 Jazzy
 
 ## Build
 Clone and Build the project using the following steps.
@@ -13,6 +13,7 @@ Clone and Build the project using the following steps.
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 git clone https://github.com/tianbot/tianbot_core.git -b ros2
 cd tianbot_core && ./build.sh
+source install-wsl/setup.bash
 ```
 
 ## Mini V1.5 使用

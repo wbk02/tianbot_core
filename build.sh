@@ -1,31 +1,15 @@
-#!/bin/bash
-# author: sujit-168 su2054552689@gmail.com
-
-pushd `pwd` > /dev/null
-cd `dirname $0`
-echo "Working Path: "`pwd`
-
-rm -rf ../../build/
-rm -rf ../../devel/
-rm -rf ../../install/
-rm -rf ../../log/
-
-# build
-pushd `pwd` > /dev/null
-
-if [ "$ROS_VERSION" == "2" ]; then
-    if [ "$ROS_DISTRO" == "humble" ]; then
-        echo "Not use -DBUILD_BEFORE_HUMBLE=ON args for building..."
-        cd ../../
-        colcon build --symlink-install --continue-on-error
-    else
-        echo "ROS is not Humble ($ROS_DISTRO) "
-        echo "Will use -DBUILD_BEFORE_HUMBLE=ON args for building..."
-        cd ../../
-        colcon build --symlink-install --cmake-args -DBUILD_BEFORE_HUMBLE=ON --continue-on-error
-    fi
-else
-    exit
+#!/usr/bin/env bash
+# 从当前包构建，避免递归扫描固件、ROS 1 和参考工程。
+set -euo pipefail
+cd "$(dirname "$0")"
+if [[ "${ROS_VERSION:-}" != 2 ]]; then
+    echo '请先执行 dev ros2 加载 ROS 2 环境。' >&2
+    exit 2
 fi
-
-popd > /dev/null
+# WSL 内存有限，默认最多两个编译任务，可由调用者覆盖。
+export CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-2}
+export MAKEFLAGS=${MAKEFLAGS:--j2}
+colcon --log-base log-wsl build \
+    --base-paths . --packages-select tianbot_core --executor sequential \
+    --build-base build-wsl --install-base install-wsl \
+    --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
